@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-08T13:12:03.304Z",
+  "title": "Design System: Piket Opsi",
+  "extensions": {
+    "typographyMeta": {
+      "heading": {
+        "displayName": "Page heading",
+        "purpose": "Section titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Schedule and form content."
+      }
+    },
+    "motion": [
+      {
+        "name": "reduced-motion",
+        "value": "0.01ms",
+        "purpose": "Animation and transition override when reduced motion is requested."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Main creation and save actions.",
+      "html": "<button class=\"ds-button ds-primary\">Buat jadwal</button>",
+      "css": ".ds-button {display:inline-flex;align-items:center;justify-content:center;height:32px;padding:0 10px;border:1px solid transparent;border-radius:var(--radius,0.625rem);font:500 14px Geist,sans-serif;transition:background-color 100ms;} .ds-button:focus-visible {outline:3px solid color-mix(in oklch,var(--ring) 50%,transparent);outline-offset:2px;} .ds-button:disabled {opacity:.5;pointer-events:none;}.ds-primary {background:var(--primary);color:var(--primary-foreground);} .ds-primary:hover {background:color-mix(in oklch,var(--primary) 80%,transparent);} .ds-primary:active {transform:translateY(1px);}"
+    },
+    {
+      "name": "Outline button",
+      "kind": "button",
+      "description": "Secondary actions and schedule details.",
+      "html": "<button class=\"ds-button ds-outline\">Lihat detail</button>",
+      "css": ".ds-button {display:inline-flex;align-items:center;justify-content:center;height:32px;padding:0 10px;border:1px solid transparent;border-radius:var(--radius,0.625rem);font:500 14px Geist,sans-serif;transition:background-color 100ms;} .ds-button:focus-visible {outline:3px solid color-mix(in oklch,var(--ring) 50%,transparent);outline-offset:2px;} .ds-button:disabled {opacity:.5;pointer-events:none;}.ds-outline {background:var(--background);color:var(--foreground);border-color:var(--border);} .ds-outline:hover {background:var(--muted);}"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "description": "Search and form fields.",
+      "html": "<input class=\"ds-input\" placeholder=\"Cari jadwal...\" aria-label=\"Cari jadwal\">",
+      "css": ".ds-input {width:240px;height:32px;padding:0 10px;border:1px solid var(--input);border-radius:var(--radius);background:transparent;color:var(--foreground);font:400 14px Geist,sans-serif;} .ds-input::placeholder {color:var(--muted-foreground);} .ds-input:focus-visible {outline:3px solid color-mix(in oklch,var(--ring) 50%,transparent);border-color:var(--ring);}"
+    },
+    {
+      "name": "Navigation",
+      "kind": "nav",
+      "description": "Active section in the shadcn sidebar.",
+      "html": "<nav class=\"ds-nav\"><button aria-current=\"page\">Jadwal</button><button>Pengingat</button></nav>",
+      "css": ".ds-nav {display:grid;gap:4px;width:224px;font:400 14px Geist,sans-serif;} .ds-nav button {height:32px;padding:0 8px;text-align:left;background:transparent;color:var(--sidebar-foreground);border:0;border-radius:var(--radius);} .ds-nav button[aria-current],.ds-nav button:hover {background:var(--sidebar-accent);} .ds-nav button:focus-visible {outline:2px solid var(--sidebar-ring);}"
+    },
+    {
+      "name": "Status badge",
+      "kind": "chip",
+      "description": "Default variant for a completed assignment.",
+      "html": "<span class=\"ds-badge\">Selesai</span>",
+      "css": ".ds-badge {display:inline-flex;align-items:center;padding:2px 8px;border-radius:var(--radius);background:var(--primary);color:var(--primary-foreground);font:500 12px Geist,sans-serif;}"
+    },
+    {
+      "name": "Schedule panel",
+      "kind": "card",
+      "description": "Date-grouped schedule information.",
+      "html": "<article class=\"ds-panel\"><strong>Piket ruang kerja</strong><p>08:00–09:00 WIB</p></article>",
+      "css": ".ds-panel {padding:20px;border:1px solid var(--border);border-radius:calc(var(--radius)*1.4);background:var(--background);color:var(--foreground);font:400 14px Geist,sans-serif;} .ds-panel strong {font-weight:500;} .ds-panel p {margin:8px 0 0;color:var(--muted-foreground);font-variant-numeric:tabular-nums;}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Default shadcn, clear scheduling",
+    "overview": "Use the generated shadcn/ui base-nova preset with the neutral default theme. The schedule, time, assignees, and per-member status carry the visual hierarchy. All application data and email content are clearly marked as demonstrations.",
+    "keyCharacteristics": [
+      "Neutral surfaces and default component variants.",
+      "Geist typography, clear grouping, and compact controls.",
+      "Detail-first schedules with a calendar tab."
+    ],
+    "rules": [],
+    "dos": [
+      "Preserve the generated light and dark theme tokens.",
+      "Use shadcn components and their default variants for controls and feedback.",
+      "Keep Indonesian labels, explicit WIB times, and per-member status text."
+    ],
+    "donts": [
+      "Do not introduce a custom color scheme or decorative accent colors.",
+      "Do not imply that preview credentials, schedule changes, or email delivery are persisted on a server."
+    ]
+  }
+}

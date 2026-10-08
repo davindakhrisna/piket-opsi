@@ -1,3 +1,6 @@
+# Nix provides pnpm; avoid downloading a standalone binary on NixOS.
+pmOnFail: ignore
+
 allowBuilds:
   sharp: false
   unrs-resolver: false
