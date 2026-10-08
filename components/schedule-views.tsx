@@ -9,7 +9,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
-  Clock3,
   ListFilter,
   MapPin,
   Minus,
@@ -175,9 +174,6 @@ export function DetailedSchedules({
                     </span>
                   )}
                 </p>
-                <p className="text-xs tabular-nums text-muted-foreground">
-                  {schedule.startTime}–{schedule.endTime} WIB
-                </p>
               </div>
               <p className="col-span-2 row-start-2 line-clamp-2 text-sm text-muted-foreground sm:col-span-1 sm:row-start-auto">
                 {assigned
@@ -203,7 +199,7 @@ export function DetailedSchedules({
                 size="sm"
                 className="col-start-2 row-start-1 sm:col-start-auto sm:row-start-auto"
                 onClick={() => onOpen(schedule)}
-                aria-label={`Lihat detail piket ${formatDate(schedule.date)} pukul ${schedule.startTime}`}
+                aria-label={`Lihat detail piket ${formatDate(schedule.date)}`}
               >
                 Lihat detail
               </Button>
@@ -291,9 +287,6 @@ function ScheduleDay({
             key={schedule.id}
             className="block truncate rounded bg-muted px-1.5 py-1 text-left text-[11px] text-foreground"
           >
-            <span className="mr-1 tabular-nums text-muted-foreground">
-              {schedule.startTime}
-            </span>
             {schedule.title}
           </span>
         ))}
@@ -472,10 +465,6 @@ export function ScheduleCalendar({
                 >
                   {schedule.title}
                 </Button>
-                <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Clock3 className="size-3.5" />
-                  {schedule.startTime}–{schedule.endTime} WIB
-                </p>
                 {schedule.location && (
                   <p className="flex items-center gap-2 text-xs text-muted-foreground">
                     <MapPin className="size-3.5" />

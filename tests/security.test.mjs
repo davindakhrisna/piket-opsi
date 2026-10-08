@@ -4,7 +4,6 @@ import {
   AppError,
   digest,
   hashPassword,
-  minutes,
   newSession,
   requireDate,
   requirePassword,
@@ -33,7 +32,7 @@ test("session tokens are unpredictable and only their digests are stored", () =>
   assert.notEqual(one.token, two.token);
 });
 
-test("server validation rejects impossible dates and invalid times", () => {
+test("server validation rejects impossible calendar dates", () => {
   for (const date of [
     "2026-02-29",
     "2026-13-01",
@@ -45,7 +44,4 @@ test("server validation rejects impossible dates and invalid times", () => {
     assert.throws(() => requireDate(date), AppError);
   requireDate("2024-02-29");
   requireDate("2100-12-31");
-  assert.equal(minutes("23:59"), 1439);
-  for (const time of ["24:00", "9:00", "12:60", null])
-    assert.throws(() => minutes(time), AppError);
 });

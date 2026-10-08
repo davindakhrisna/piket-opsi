@@ -95,10 +95,3 @@ export function requireDate(value: unknown): asserts value is string {
   )
     throw new AppError(400, "Tanggal jadwal tidak valid.");
 }
-
-export function minutes(value: unknown) {
-  if (typeof value !== "string" || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))
-    throw new AppError(400, "Waktu jadwal tidak valid.");
-  const [hours, minute] = value.split(":").map(Number);
-  return hours * 60 + minute;
-}

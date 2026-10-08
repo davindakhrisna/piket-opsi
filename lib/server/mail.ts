@@ -22,7 +22,7 @@ export async function queueEmails(
   kind: "assignment" | "reminder",
 ) {
   const result = await client.query(
-    "SELECT s.id, s.date::text, s.start_minute, s.end_minute, s.notes, s.mail_version, u.id AS member_id, u.name, u.email FROM schedules s JOIN assignments a ON a.schedule_id = s.id JOIN users u ON u.id = a.member_id WHERE s.id = $1 AND a.status = 'scheduled' AND (s.date + s.start_minute * interval '1 minute') AT TIME ZONE 'Asia/Jakarta' > now() AND ($2 = 'assignment' OR s.date = (now() AT TIME ZONE 'Asia/Jakarta')::date + 1)",
+    "SELECT s.id, s.date::text, s.notes, s.mail_version, u.id AS member_id, u.name, u.email FROM schedules s JOIN assignments a ON a.schedule_id = s.id JOIN users u ON u.id = a.member_id WHERE s.id = $1 AND a.status = 'scheduled' AND s.date >= (now() AT TIME ZONE 'Asia/Jakarta')::date AND ($2 = 'assignment' OR s.date = (now() AT TIME ZONE 'Asia/Jakarta')::date + 1)",
     [scheduleId, kind],
   );
   if (!result.rowCount) return;
@@ -32,16 +32,16 @@ export async function queueEmails(
       "Konfigurasi pengiriman email belum tersedia. Jadwal belum disimpan.",
     );
   const origin = appOrigin();
-  const time = (value: number) =>
-    `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
   for (const row of result.rows) {
     const link = `${origin}/?jadwal=${row.id}`;
-    const text = `Halo ${row.name},\n\n${kind === "assignment" ? "Admin menugaskan Anda untuk piket di Ruang Opsi." : "Pengingat: besok Anda bertugas piket di Ruang Opsi."}\n\nTanggal: ${row.date}\nWaktu: ${time(row.start_minute)}–${time(row.end_minute)} WIB\nLokasi: Ruang Opsi\n${row.notes ? `Catatan: ${row.notes}\n` : ""}\nBuka jadwal: ${link}\n\nSetelah bertugas, tandai tugas Anda sebagai selesai di aplikasi.\nJika masih menggunakan kata sandi awal, ubah melalui Pengaturan.\n\nPiket Opsi · Asia/Jakarta`;
+    const text = `Halo ${row.name},\n\n${kind === "assignment" ? "Admin menugaskan Anda untuk piket di Ruang Opsi." : "Pengingat: besok Anda bertugas piket di Ruang Opsi."}\n\nTanggal: ${row.date}\nLokasi: Ruang Opsi\n${row.notes ? `Catatan: ${row.notes}\n` : ""}\nBuka jadwal: ${link}\n\nSetelah bertugas, tandai tugas Anda sebagai selesai di aplikasi.\nJika masih menggunakan kata sandi awal, ubah melalui Pengaturan.\n\nPiket Opsi · Asia/Jakarta`;
     const payload = {
       from: process.env.RESEND_FROM,
       to: [row.email],
       subject: `${kind === "assignment" ? "Penugasan piket" : "Pengingat piket besok"} · ${row.date} · Ruang Opsi`,
       text,
+      // Priority hints for supporting mail clients; Gmail importance is recipient-controlled.
+      headers: { "X-Priority": "1", Importance: "high" },
     };
     await client.query(
       "INSERT INTO email_jobs(id, job_key, schedule_id, member_id, mail_version, kind, payload) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (job_key) DO UPDATE SET state = 'pending', next_attempt_at = now(), error_code = NULL WHERE email_jobs.state = 'cancelled' AND email_jobs.error_code = 'assignment_inactive' AND (email_jobs.uncertain_since IS NULL OR email_jobs.uncertain_since > now() - interval '23 hours') AND email_jobs.provider_id IS NULL",
@@ -114,7 +114,7 @@ export async function processEmailJobs() {
         break;
       }
       const schedule = await client.query(
-        "SELECT s.mail_version, a.status, (s.date + s.start_minute * interval '1 minute') AT TIME ZONE 'Asia/Jakarta' > now() AS future, s.date = (now() AT TIME ZONE 'Asia/Jakarta')::date + 1 AS tomorrow FROM schedules s JOIN assignments a ON a.schedule_id = s.id AND a.member_id = $2 WHERE s.id = $1 FOR UPDATE OF s",
+        "SELECT s.mail_version, a.status, s.date >= (now() AT TIME ZONE 'Asia/Jakarta')::date AS not_past, s.date = (now() AT TIME ZONE 'Asia/Jakarta')::date + 1 AS tomorrow FROM schedules s JOIN assignments a ON a.schedule_id = s.id AND a.member_id = $2 WHERE s.id = $1 FOR UPDATE OF s",
         [job.schedule_id, job.member_id],
       );
       const row = schedule.rows[0];
@@ -131,7 +131,7 @@ export async function processEmailJobs() {
         !row ||
         row.mail_version !== job.mail_version ||
         row.status !== "scheduled" ||
-        !row.future ||
+        !row.not_past ||
         (job.kind === "reminder" && !row.tomorrow)
       ) {
         await client.query(

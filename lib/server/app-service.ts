@@ -4,7 +4,6 @@ import {
   AppError,
   digest,
   hashPassword,
-  minutes,
   newSession,
   requireDate,
   requireId,
@@ -202,7 +201,7 @@ export async function snapshot(auth: Auth): Promise<AppSnapshot> {
       [auth.user.role === "admin", auth.user.id],
     );
     const schedules = await client.query(
-      "SELECT s.id, s.date::text, s.version, lpad((s.start_minute / 60)::text, 2, '0') || ':' || lpad((s.start_minute % 60)::text, 2, '0') AS \"startTime\", lpad((s.end_minute / 60)::text, 2, '0') || ':' || lpad((s.end_minute % 60)::text, 2, '0') AS \"endTime\", s.notes, jsonb_agg(jsonb_build_object('memberId', a.member_id, 'status', a.status) ORDER BY a.member_id) AS assignments FROM schedules s JOIN assignments a ON a.schedule_id = s.id GROUP BY s.id ORDER BY s.date, s.start_minute",
+      "SELECT s.id, s.date::text, s.version, s.notes, jsonb_agg(jsonb_build_object('memberId', a.member_id, 'status', a.status) ORDER BY a.member_id) AS assignments FROM schedules s JOIN assignments a ON a.schedule_id = s.id GROUP BY s.id ORDER BY s.date, s.id",
     );
     const emails = await client.query(
       'SELECT id, schedule_id AS "scheduleId", member_id AS "memberId", kind, state, error_code AS "errorCode", sent_at AS "sentAt" FROM email_jobs WHERE ($1 OR member_id = $2) ORDER BY created_at DESC LIMIT 200',
@@ -282,13 +281,6 @@ export async function saveSchedule(
     requireVersion(input.version);
   }
   requireDate(input.date);
-  const start = minutes(input.startTime),
-    end = minutes(input.endTime);
-  if (end <= start)
-    throw new AppError(
-      400,
-      "Waktu selesai harus setelah waktu mulai pada hari yang sama.",
-    );
   if (
     typeof input.notes !== "string" ||
     input.notes.length > 2000 ||
@@ -326,8 +318,6 @@ export async function saveSchedule(
       );
       if (
         row.date === input.date &&
-        row.start_minute === start &&
-        row.end_minute === end &&
         row.notes === notes &&
         assigned.rows
           .map((value) => value.member_id)
@@ -354,18 +344,18 @@ export async function saveSchedule(
     if (members.rowCount !== ids.length)
       throw new AppError(400, "Salah satu anggota tidak tersedia.");
     const conflict = await client.query(
-      "SELECT s.id FROM schedules s JOIN assignments a ON a.schedule_id = s.id WHERE a.member_id = ANY($1::text[]) AND s.date = $2::date AND s.start_minute < $3 AND s.end_minute > $4 AND s.id <> $5 LIMIT 1",
-      [ids, input.date, end, start, id],
+      "SELECT s.id FROM schedules s JOIN assignments a ON a.schedule_id = s.id WHERE a.member_id = ANY($1::text[]) AND s.date = $2::date AND s.id <> $3 LIMIT 1",
+      [ids, input.date, id],
     );
     if (conflict.rowCount)
       throw new AppError(
         409,
-        "Anggota sudah bertugas pada waktu yang bertumpuk. Pilih waktu atau anggota lain.",
+        "Anggota sudah bertugas pada tanggal ini. Pilih tanggal atau anggota lain.",
       );
     if (previous) {
       await client.query(
-        "UPDATE schedules SET date = $1, start_minute = $2, end_minute = $3, notes = $4, version = version + 1, mail_version = mail_version + 1, updated_at = now() WHERE id = $5",
-        [input.date, start, end, notes, id],
+        "UPDATE schedules SET date = $1, notes = $2, version = version + 1, mail_version = mail_version + 1, updated_at = now() WHERE id = $3",
+        [input.date, notes, id],
       );
       await client.query(
         "DELETE FROM assignments WHERE schedule_id = $1 AND NOT (member_id = ANY($2::text[]))",
@@ -377,8 +367,8 @@ export async function saveSchedule(
       );
     } else
       await client.query(
-        "INSERT INTO schedules(id, date, start_minute, end_minute, notes) VALUES ($1, $2, $3, $4, $5)",
-        [id, input.date, start, end, notes],
+        "INSERT INTO schedules(id, date, notes) VALUES ($1, $2, $3)",
+        [id, input.date, notes],
       );
     for (const memberId of ids)
       await client.query(
@@ -395,8 +385,6 @@ export async function saveSchedule(
       id,
       {
         date: input.date,
-        startTime: input.startTime,
-        endTime: input.endTime,
         memberIds: ids,
       },
     );

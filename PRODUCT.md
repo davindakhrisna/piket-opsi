@@ -19,7 +19,7 @@ Manage duty schedules, assignments, completion, and email reminders in one appli
 - Administrator creates members with name, email, and organization: BEM, BPM, or LPM.
 - Initial administrator login uses `admin` for both identifier and password; require a password change afterward.
 - Initial member password is their administrator-provided email. Members receive a post-login notification and persistent reminder to change it; the change is optional. First-time setup for both roles omits the current-password field; later changes require it.
-- All schedules are piket at Ruang Opsi. Administrator sets dates/times and selects multiple members, filtering assignees by organization.
+- All schedules are piket at Ruang Opsi. Administrator sets a calendar date and selects multiple members, filtering assignees by organization. Each member can be assigned once per date.
 - Members open a compact detailed list and can switch between their own and all members' schedules. Administrator opens the calendar and sees all members. Both roles can switch views.
 - Assignment states are scheduled, done, and skipped; administrator can override each member's state. Status filtering defaults to scheduled.
 - Both views support 3/7/14/30-day ranges, counting today as day one in Jakarta, and all dates.
@@ -28,7 +28,8 @@ Manage duty schedules, assignments, completion, and email reminders in one appli
 - Accounts, sessions, schedules, assignments, audit events, and email jobs persist in PostgreSQL. Server routes enforce permissions and detect stale edits.
 - Backend uses Resend, Neon free tier, and Vercel Hobby. Assignment email is queued transactionally and processed immediately on the assignment day. H−1 reminders run daily at 07:00–07:59 WIB.
 - Confirmed interface language: Bahasa Indonesia. Confirmed schedule time zone: Asia/Jakarta.
-- Schedules use a date and start/end time, as proposed in the language/time-zone question.
+- Schedules use a date only. No start or end time appears in forms, lists, calendars, details, or new email content. Existing stored clock values are preserved as historical data.
+- New emails include high-priority headers for supporting mail clients. Gmail importance requires a recipient-side filter; the sender cannot force it. Production sending requires a verified Resend domain and RESEND_FROM on that domain.
 
 ## Brand Commitments
 

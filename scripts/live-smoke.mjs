@@ -99,8 +99,6 @@ try {
     data: {
       requestId: scheduleId,
       date: tomorrow,
-      startTime: "08:00",
-      endTime: "09:00",
       notes:
         "UJI INTEGRASI OTOMATIS — ini bukan tugas piket sebenarnya. Data uji akan dihapus setelah pemeriksaan.",
       assignments: [{ memberId }],

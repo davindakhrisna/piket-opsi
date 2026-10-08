@@ -576,12 +576,6 @@ export function ScheduleDialog({
     event.preventDefault();
     if (pending) return;
     const form = new FormData(event.currentTarget);
-    const startTime = String(form.get("startTime") ?? "");
-    const endTime = String(form.get("endTime") ?? "");
-    if (endTime <= startTime) {
-      setError("Waktu selesai harus setelah waktu mulai pada hari yang sama.");
-      return;
-    }
     if (selected.length === 0) {
       setError("Pilih setidaknya satu anggota untuk jadwal ini.");
       return;
@@ -595,8 +589,6 @@ export function ScheduleDialog({
         version: schedule?.version,
         title: SCHEDULE_TITLE,
         date,
-        startTime,
-        endTime,
         location: SCHEDULE_LOCATION,
         notes: String(form.get("notes") ?? "").trim(),
         assignments: selected.map((memberId) => ({
@@ -627,7 +619,7 @@ export function ScheduleDialog({
         <DialogHeader>
           <DialogTitle>{schedule ? "Edit jadwal" : "Buat jadwal"}</DialogTitle>
           <DialogDescription>
-            Piket di Ruang Opsi. Tentukan waktu dan anggota yang bertugas.
+            Piket di Ruang Opsi. Tentukan tanggal dan anggota yang bertugas.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-5">
@@ -663,28 +655,6 @@ export function ScheduleDialog({
                 />
               </PopoverContent>
             </Popover>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="start-time">Mulai (WIB)</Label>
-              <Input
-                id="start-time"
-                name="startTime"
-                type="time"
-                defaultValue={schedule?.startTime ?? "08:00"}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="end-time">Selesai (WIB)</Label>
-              <Input
-                id="end-time"
-                name="endTime"
-                type="time"
-                defaultValue={schedule?.endTime ?? "09:00"}
-                required
-              />
-            </div>
           </div>
           <fieldset className="space-y-3">
             <legend className="mb-2 text-sm font-medium">

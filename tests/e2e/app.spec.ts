@@ -69,8 +69,6 @@ function schedule(memberId: string, offset = 5) {
   return {
     requestId: randomUUID(),
     date: shiftDate(jakartaToday(), offset),
-    startTime: "08:00",
-    endTime: "09:00",
     notes: "Rapikan Ruang Opsi.",
     assignments: [{ memberId, status: "scheduled" }],
   };
@@ -92,7 +90,12 @@ async function captures(request: APIRequestContext) {
     await request.get("http://127.0.0.1:3419/messages")
   ).json()) as {
     key: string;
-    payload: { to: string[]; text: string; subject: string };
+    payload: {
+      to: string[];
+      text: string;
+      subject: string;
+      headers: Record<string, string>;
+    };
     receivedAt: string;
   }[];
 }
@@ -187,7 +190,7 @@ test("admin onboarding, organization-based assignment, immediate email, and pers
   await page.getByRole("option", { name: "BEM", exact: true }).click();
   await expect(dialog.getByRole("checkbox")).toHaveCount(1);
   await dialog.getByRole("checkbox").first().check();
-  // Always use a future date, including when this test runs after 23:00 WIB.
+  // A future date also proves assignment mail is sent on the assignment day.
   const plannedDate = shiftDate(jakartaToday(), 2);
   const [year, month, day] = plannedDate.split("-").map(Number);
   await dialog.getByRole("button", { name: "Pilih tanggal jadwal" }).click();
@@ -197,8 +200,11 @@ test("admin onboarding, organization-based assignment, immediate email, and pers
   if ((await dayButton.count()) === 0)
     await page.getByRole("button", { name: "Go to the Next Month" }).click();
   await dayButton.click();
-  await dialog.getByLabel("Mulai (WIB)").fill("23:00");
-  await dialog.getByLabel("Selesai (WIB)").fill("23:30");
+  await expect(page.locator('[data-slot="popover-content"]')).toHaveCount(0);
+  await expect(dialog.locator('input[type="time"]')).toHaveCount(0);
+  await page.getByRole("dialog", { name: "Buat jadwal", exact: true }).screenshot({
+    path: `/tmp/piket-date-after-${test.info().project.name}.png`,
+  });
   await dialog
     .getByRole("button", { name: "Buat jadwal", exact: true })
     .click();
@@ -206,6 +212,8 @@ test("admin onboarding, organization-based assignment, immediate email, and pers
   await expect.poll(async () => (await captures(request)).length).toBe(1);
   const emails = await captures(request);
   expect(emails[0].payload.to).toEqual([recipient]);
+  expect(emails[0].payload.headers).toEqual({ "X-Priority": "1", Importance: "high" });
+  expect(emails[0].payload.text).not.toContain("Waktu:");
   expect(emails[0].payload.text).toContain(
     "Buka jadwal: http://localhost:3100/?jadwal=",
   );
@@ -213,6 +221,8 @@ test("admin onboarding, organization-based assignment, immediate email, and pers
   expect(value.location).toBe("Ruang Opsi");
   expect(value.assignments).toHaveLength(1);
   expect(value.date).toBe(plannedDate);
+  expect(value).not.toHaveProperty("startTime");
+  expect(value).not.toHaveProperty("endTime");
   await page.reload();
   await expect(
     page.getByRole("heading", { name: "Jadwal piket" }),
@@ -463,8 +473,6 @@ test("concurrent saves, duplicate retries, status preservation and input validat
   expect(updated.assignments[0].status).toBe("done");
   for (const bad of [
     { date: "2026-02-30" },
-    { endTime: "07:00" },
-    { startTime: "24:00" },
     { assignments: [] },
     { assignments: [{ memberId: "admin" }] },
     { notes: "x".repeat(2001) },
@@ -502,6 +510,46 @@ test("concurrent saves, duplicate retries, status preservation and input validat
   ).toBe(0);
 });
 
+test("date-only schedules preserve legacy data, allow today's email, and reject duplicate daily assignments", async ({
+  request,
+}) => {
+  await admin(request);
+  const id = await member(request);
+  const legacyId = randomUUID();
+  const today = (await db.query(
+    "SELECT (now() AT TIME ZONE 'Asia/Jakarta')::date::text AS date",
+  )).rows[0].date;
+  await db.query(
+    "INSERT INTO schedules(id, date, start_minute, end_minute, notes) VALUES ($1, $2, 0, 1, 'Legacy schedule')",
+    [legacyId, today],
+  );
+  await db.query("INSERT INTO assignments(schedule_id, member_id) VALUES ($1, $2)", [legacyId, id]);
+  const legacy = (await schedules(request)).find((value: { id: string }) => value.id === legacyId);
+  expect(legacy).not.toHaveProperty("startTime");
+  expect(legacy).not.toHaveProperty("endTime");
+  expect((await send(request, `schedules/${legacyId}`, "PUT", {
+    date: today,
+    version: legacy.version,
+    notes: "Updated date-only schedule",
+    assignments: [{ memberId: id }],
+  })).status()).toBe(200);
+  await expect.poll(async () => (await captures(request)).length).toBe(1);
+  const email = (await captures(request))[0];
+  expect(email.payload.text).toContain(`Tanggal: ${today}`);
+  expect(email.payload.text).not.toContain("Waktu:");
+  expect(email.payload.headers.Importance).toBe("high");
+  expect((await db.query("SELECT start_minute, end_minute FROM schedules WHERE id = $1", [legacyId])).rows[0]).toEqual({ start_minute: 0, end_minute: 1 });
+  expect((await send(request, "schedules", "POST", { ...schedule(id), date: today })).status()).toBe(409);
+  const next = schedule(id, 2);
+  expect((await send(request, "schedules", "POST", next)).status()).toBe(201);
+  expect((await db.query("SELECT start_minute, end_minute FROM schedules WHERE id = $1", [next.requestId])).rows[0]).toEqual({ start_minute: null, end_minute: null });
+  const otherId = await member(request, "other@example.com", "Other", "BPM");
+  expect((await send(request, "schedules", "POST", { ...schedule(otherId), date: today })).status()).toBe(201);
+  const past = schedule(id, -1);
+  expect((await send(request, "schedules", "POST", past)).status()).toBe(201);
+  expect((await db.query("SELECT count(*)::int AS count FROM email_jobs WHERE schedule_id = $1", [past.requestId])).rows[0].count).toBe(0);
+});
+
 test("assignment email is immediate, H−1 cron is protected and repeated runs deduplicate", async ({
   request,
 }) => {
@@ -535,6 +583,8 @@ test("assignment email is immediate, H−1 cron is protected and repeated runs d
   );
   expect(reminder?.payload.text).toContain("besok Anda bertugas");
   expect(reminder?.payload.text).toContain(shiftDate(jakartaToday(), 1));
+  expect(reminder?.payload.text).not.toContain("Waktu:");
+  expect(reminder?.payload.headers.Importance).toBe("high");
   const counts = await db.query(
     "SELECT kind, count(*)::int AS count FROM email_jobs GROUP BY kind",
   );

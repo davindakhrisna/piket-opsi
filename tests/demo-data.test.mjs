@@ -23,7 +23,6 @@ test("member and status filters apply to the same assignment", () => {
     id: "one",
     title: "Piket",
     date: "2026-10-08",
-    startTime: "08:00",
     location: SCHEDULE_LOCATION,
     notes: "",
     assignments: [
@@ -37,7 +36,7 @@ test("member and status filters apply to the same assignment", () => {
   assert.deepEqual(filterSchedules([schedule], "unknown", "all", ""), []);
 });
 
-test("search matches locations without case sensitivity and orders by date and time", () => {
+test("search matches locations without case sensitivity and orders by date with stable ties", () => {
   const base = {
     title: "Piket",
     location: SCHEDULE_LOCATION,
@@ -45,9 +44,9 @@ test("search matches locations without case sensitivity and orders by date and t
     assignments: [{ memberId: "a", status: "scheduled" }],
   };
   const schedules = [
-    { ...base, id: "late", date: "2026-10-08", startTime: "16:00" },
-    { ...base, id: "tomorrow", date: "2026-10-09", startTime: "08:00" },
-    { ...base, id: "early", date: "2026-10-08", startTime: "08:00" },
+    { ...base, id: "late", date: "2026-10-08" },
+    { ...base, id: "tomorrow", date: "2026-10-09" },
+    { ...base, id: "early", date: "2026-10-08" },
   ];
   assert.deepEqual(
     filterSchedules(schedules, "all", "all", " OPSI ").map(
@@ -72,7 +71,8 @@ test("sample assignments reference existing members and expose all three states"
   for (const schedule of schedules) {
     assert.equal(schedule.title, SCHEDULE_TITLE);
     assert.equal(schedule.location, SCHEDULE_LOCATION);
-    assert.ok(schedule.startTime < schedule.endTime);
+    assert.ok(!("startTime" in schedule));
+    assert.ok(!("endTime" in schedule));
     for (const assignment of schedule.assignments) {
       assert.ok(ids.has(assignment.memberId));
       statuses.add(assignment.status);
@@ -87,7 +87,6 @@ test("day ranges include today and their last day, exclude past and later dates,
     title: SCHEDULE_TITLE,
     location: SCHEDULE_LOCATION,
     notes: "Rapikan meja",
-    startTime: "08:00",
     assignments: [
       { memberId: "a", status: "scheduled" },
       { memberId: "b", status: "done" },

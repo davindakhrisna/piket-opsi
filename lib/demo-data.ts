@@ -46,8 +46,6 @@ export function createDemoData() {
     {
       id: "schedule-1",
       offset: 0,
-      startTime: "08:00",
-      endTime: "09:00",
       notes:
         "Rapikan meja, periksa perlengkapan, dan siapkan ruang sebelum kegiatan dimulai.",
       ids: ["member-1", "member-2"],
@@ -55,32 +53,24 @@ export function createDemoData() {
     {
       id: "schedule-2",
       offset: 1,
-      startTime: "09:00",
-      endTime: "10:30",
       notes: "Rapikan kursi dan perlengkapan di Ruang Opsi.",
       ids: ["member-3", "member-4", "member-1"],
     },
     {
       id: "schedule-3",
       offset: 3,
-      startTime: "13:00",
-      endTime: "14:00",
       notes: "Bersihkan meja dan rapikan perlengkapan di Ruang Opsi.",
       ids: ["member-2", "member-5"],
     },
     {
       id: "schedule-4",
       offset: 5,
-      startTime: "08:00",
-      endTime: "09:00",
       notes: "Periksa kebersihan dan isi ulang perlengkapan yang habis.",
       ids: ["member-3", "member-5"],
     },
     {
       id: "schedule-5",
       offset: 7,
-      startTime: "16:00",
-      endTime: "17:00",
       notes:
         "Rapikan perlengkapan dan pastikan Ruang Opsi terkunci setelah piket.",
       ids: ["member-1", "member-4"],
@@ -88,16 +78,12 @@ export function createDemoData() {
     {
       id: "schedule-6",
       offset: -2,
-      startTime: "13:00",
-      endTime: "14:00",
       notes: "Rapikan perlengkapan dan bersihkan Ruang Opsi.",
       ids: ["member-2", "member-3"],
     },
     {
       id: "schedule-7",
       offset: -5,
-      startTime: "08:00",
-      endTime: "09:00",
       notes: "Siapkan Ruang Opsi sebelum kegiatan pagi.",
       ids: ["member-1", "member-5"],
     },

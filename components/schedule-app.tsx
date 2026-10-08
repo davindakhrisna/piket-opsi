@@ -6,7 +6,6 @@ import {
   CalendarDays,
   ChevronDown,
   CircleHelp,
-  Clock3,
   Copy,
   KeyRound,
   List,
@@ -1171,7 +1170,7 @@ export default function ScheduleApp() {
                   Tautan jadwal disertakan di setiap email
                 </span>
                 <span className="ml-auto text-xs text-muted-foreground">
-                  Waktu lokal WIB
+                  Tanggal mengikuti WIB
                 </span>
               </div>
               <div className="overflow-hidden rounded-xl border">
@@ -1198,8 +1197,7 @@ export default function ScheduleApp() {
                             {schedule.title}
                           </Button>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {formatDate(schedule.date, true)} ·{" "}
-                            {schedule.startTime} WIB
+                            {formatDate(schedule.date, true)}
                           </p>
                         </TableCell>
                         <TableCell className="hidden text-muted-foreground md:table-cell">
@@ -1466,16 +1464,6 @@ export default function ScheduleApp() {
                     </dd>
                   </div>
                 </div>
-                <div className="flex gap-3">
-                  <Clock3 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Waktu</dt>
-                    <dd className="mt-1">
-                      {selectedSchedule.startTime}–{selectedSchedule.endTime}{" "}
-                      WIB
-                    </dd>
-                  </div>
-                </div>
                 {selectedSchedule.location && (
                   <div className="flex gap-3">
                     <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -1714,12 +1702,10 @@ export default function ScheduleApp() {
                   </div>
                   <div>
                     <dt className="text-xs text-muted-foreground">
-                      Tanggal dan waktu
+                      Tanggal
                     </dt>
                     <dd className="mt-1">
                       {formatDate(emailSchedule.date)}
-                      <br />
-                      {emailSchedule.startTime}–{emailSchedule.endTime} WIB
                     </dd>
                   </div>
                   {emailSchedule.location && (

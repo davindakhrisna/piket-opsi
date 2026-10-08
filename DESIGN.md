@@ -43,7 +43,7 @@ components:
 
 **Creative North Star: "Default shadcn, clear scheduling"**
 
-Use the generated shadcn/ui base-nova preset with the neutral default theme. The schedule, time, assignees, and per-member status carry the visual hierarchy. All application data and email content are clearly marked as demonstrations.
+Use the generated shadcn/ui base-nova preset with the neutral default theme. The schedule, date, assignees, and per-member status carry the visual hierarchy. All application data and email content are clearly marked as demonstrations.
 
 **Key Characteristics:**
 - Neutral surfaces and default component variants.
@@ -56,11 +56,11 @@ The normative values above come from `app/globals.css`. Keep both `:root` and `.
 
 ## Typography
 
-Use the existing Geist font binding. Desktop page headings use 30px/36px semibold; mobile headings use 24px/32px. Body content is generally 14px, supporting text 12px, and times use tabular numerals. Desktop calendar event labels use 11px and overflow counts use 10px to fit seven date columns; full event details remain 14px in the selected-day panel. Component typography inherits the generated shadcn styles.
+Use the existing Geist font binding. Desktop page headings use 30px/36px semibold; mobile headings use 24px/32px. Body content is generally 14px, supporting text 12px, and dates use tabular numerals. Desktop calendar event labels use 11px and overflow counts use 10px to fit seven date columns; full event details remain 14px in the selected-day panel. Component typography inherits the generated shadcn styles.
 
 ## Layout
 
-Use the shadcn sidebar and inset with a 64px header. The collapsed desktop rail is 64px wide with centered buttons. Select menus open below their triggers, align to the left edge, and use inset option padding. Main content uses 16px padding on mobile, 24px from sm, and 32px from lg; maximum content width is 1440px. Below 768px, search and a Filter button share one row; a bottom sheet holds the full-width 44px scope/status/date controls, and a short summary remains visible. Desktop filters wrap. Detailed rows show date/time, assignees and organizations, and status with one detail action; lists paginate after ten schedules. Rows stack on mobile, and the sidebar becomes a sheet below 768px. From 1280px, calendar and selected-day details sit side by side. On smaller screens, day details follow the calendar; mobile calendar cells use centered dates and one dot for scheduled events, with counts retained in accessible labels and selected-day details. Mobile cells are 64px tall with a quieter grid. Today uses a filled primary date marker and a primary outline, while another selected date uses the muted background. Today follows Asia/Jakarta independently of the device time zone.
+Use the shadcn sidebar and inset with a 64px header. The collapsed desktop rail is 64px wide with centered buttons. Select menus open below their triggers, align to the left edge, and use inset option padding. Main content uses 16px padding on mobile, 24px from sm, and 32px from lg; maximum content width is 1440px. Below 768px, search and a Filter button share one row; a bottom sheet holds the full-width 44px scope/status/date controls, and a short summary remains visible. Desktop filters wrap. Detailed rows show date, assignees and organizations, and status with one detail action; lists paginate after ten schedules. Rows stack on mobile, and the sidebar becomes a sheet below 768px. From 1280px, calendar and selected-day details sit side by side. On smaller screens, day details follow the calendar; mobile calendar cells use centered dates and one dot for scheduled events, with counts retained in accessible labels and selected-day details. Mobile cells are 64px tall with a quieter grid. Today uses a filled primary date marker and a primary outline, while another selected date uses the muted background. Today follows Asia/Jakarta independently of the device time zone.
 
 ## Elevation & Depth
 
@@ -78,6 +78,6 @@ Use library Sidebar, Tabs, Calendar, Dialog, Sheet, Select, Table, Alert, Avatar
 
 - Preserve the generated light and dark theme tokens.
 - Use shadcn components and their default variants for controls and feedback.
-- Keep Indonesian labels, explicit WIB times, and per-member status text.
+- Keep Indonesian labels, Jakarta calendar dates, and per-member status text.
 - Do not introduce a custom color scheme or decorative accent colors.
 - Do not imply that preview credentials, schedule changes, or email delivery are persisted on a server.

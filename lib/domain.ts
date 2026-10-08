@@ -36,8 +36,6 @@ export type Schedule = {
   version?: number;
   title: string;
   date: string;
-  startTime: string;
-  endTime: string;
   location: string;
   notes: string;
   assignments: Assignment[];
@@ -126,7 +124,5 @@ export function filterSchedules(
             .includes(query))
       );
     })
-    .sort((a, b) =>
-      `${a.date}T${a.startTime}`.localeCompare(`${b.date}T${b.startTime}`),
-    );
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
 }
