@@ -12,7 +12,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Piket Opsi — Manajemen Jadwal",
+  title: "Piket Opsi UKWMS",
   description:
     "Kelola jadwal piket, penugasan anggota, dan status tugas dalam satu tempat.",
 };
