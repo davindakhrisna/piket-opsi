@@ -80,7 +80,7 @@
       "name": "Schedule panel",
       "kind": "card",
       "description": "Date-grouped schedule information.",
-      "html": "<article class=\"ds-panel\"><strong>Piket ruang kerja</strong><p>08:00–09:00 WIB</p></article>",
+      "html": "<article class=\"ds-panel\"><strong>Piket Ruang Opsi</strong><p>08:00–09:00 WIB</p></article>",
       "css": ".ds-panel {padding:20px;border:1px solid var(--border);border-radius:calc(var(--radius)*1.4);background:var(--background);color:var(--foreground);font:400 14px Geist,sans-serif;} .ds-panel strong {font-weight:500;} .ds-panel p {margin:8px 0 0;color:var(--muted-foreground);font-variant-numeric:tabular-nums;}"
     }
   ],
@@ -90,9 +90,15 @@
     "keyCharacteristics": [
       "Neutral surfaces and default component variants.",
       "Geist typography, clear grouping, and compact controls.",
-      "Detail-first schedules with a calendar tab."
+      "Calendar-first for administrators; compact detail-first lists for members."
     ],
-    "rules": [],
+    "rules": [
+      "Theme defaults to system, with persistent light/dark/system controls and unchanged shadcn palettes.",
+      "All schedules are piket in Ruang Opsi; members belong to BEM, BPM, or LPM.",
+      "Administrator opens Calendar; members open Detail. Status defaults to Terjadwal.",
+      "Date ranges include today as day one in Asia/Jakarta. Compact lists paginate after ten schedules.",
+      "Below 768px, use a bottom filter sheet, centered calendar dates with event dots, and a distinct Jakarta today marker. Counts remain accessible."
+    ],
     "dos": [
       "Preserve the generated light and dark theme tokens.",
       "Use shadcn components and their default variants for controls and feedback.",

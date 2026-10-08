@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DayButton } from "react-day-picker";
 import { id as indonesian } from "date-fns/locale";
 import {
@@ -42,7 +42,7 @@ import {
   type AssignmentStatus,
   type Member,
   type Schedule,
-} from "@/lib/demo-data";
+} from "@/lib/domain";
 
 export function StatusBadge({ status }: { status: AssignmentStatus }) {
   const Icon =
@@ -131,87 +131,116 @@ export function DetailedSchedules({
   memberFilter: string;
   onOpen: (schedule: Schedule) => void;
 }) {
-  const groups = Map.groupBy(schedules, (schedule) => schedule.date);
+  const [page, setPage] = useState(0);
+  const pageSize = 10;
+  const pageCount = Math.ceil(schedules.length / pageSize);
+  const currentPage = Math.min(page, Math.max(0, pageCount - 1));
+  const visible = schedules.slice(
+    currentPage * pageSize,
+    (currentPage + 1) * pageSize,
+  );
   return (
-    <div className="space-y-7">
-      {Array.from(groups.entries()).map(([date, items]) => (
-        <section key={date} aria-label={formatDate(date)}>
-          <h3 className="mb-3 flex items-center gap-2 text-sm font-medium">
-            {formatDate(date)}
-            {date === jakartaToday() && (
-              <Badge variant="outline">Hari ini</Badge>
-            )}
-          </h3>
-          <div className="divide-y rounded-xl border">
-            {items.map((schedule) => {
-              const assigned = members.filter((member) =>
-                schedule.assignments.some(
-                  (assignment) => assignment.memberId === member.id,
-                ),
-              );
-              const done = schedule.assignments.filter(
-                (assignment) => assignment.status === "done",
-              ).length;
-              const personalAssignment = schedule.assignments.find(
-                (assignment) => assignment.memberId === memberFilter,
-              );
-              return (
-                <div
-                  key={schedule.id}
-                  className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:gap-6 sm:p-5"
-                >
-                  <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground sm:w-32 sm:flex-col sm:items-start">
-                    <span className="text-sm font-medium tabular-nums text-foreground">
-                      {schedule.startTime}–{schedule.endTime}
+    <div className="space-y-3">
+      <div
+        className="divide-y overflow-hidden rounded-xl border"
+        aria-label="Daftar jadwal piket"
+      >
+        {visible.map((schedule) => {
+          const assigned = members.filter((member) =>
+            schedule.assignments.some(
+              (assignment) => assignment.memberId === member.id,
+            ),
+          );
+          const personalAssignment = schedule.assignments.find(
+            (assignment) => assignment.memberId === memberFilter,
+          );
+          const sharedStatus = schedule.assignments.every(
+            (assignment) =>
+              assignment.status === schedule.assignments[0]?.status,
+          )
+            ? schedule.assignments[0]?.status
+            : null;
+          const status = personalAssignment?.status ?? sharedStatus;
+          return (
+            <div
+              key={schedule.id}
+              className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-3 p-4 sm:grid-cols-[10rem_minmax(0,1fr)_auto_auto]"
+            >
+              <div className="space-y-1 text-sm">
+                <p className="font-medium">
+                  {formatDate(schedule.date, true)}
+                  {schedule.date === jakartaToday() && (
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      Hari ini
                     </span>
-                    <span>WIB</span>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <Button
-                      variant="link"
-                      onClick={() => onOpen(schedule)}
-                      className="h-auto max-w-full justify-start p-0 text-left text-base whitespace-normal"
-                    >
-                      {schedule.title}
-                    </Button>
-                    {schedule.location && (
-                      <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <MapPin className="size-3" />
-                        {schedule.location}
-                      </p>
-                    )}
-                    <p className="mt-2 line-clamp-2 max-w-xl text-sm text-muted-foreground">
-                      {schedule.notes || "Tidak ada catatan tambahan."}
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-between gap-4 sm:min-w-40 sm:flex-col sm:items-end">
-                    <div className="flex items-center gap-2">
-                      <MemberAvatars members={assigned} />
-                      <span className="text-xs text-muted-foreground">
-                        {assigned.length} anggota
-                      </span>
-                    </div>
-                    {personalAssignment ? (
-                      <StatusBadge status={personalAssignment.status} />
-                    ) : (
-                      <span className="text-xs text-muted-foreground">
-                        {done}/{assigned.length} selesai
-                      </span>
-                    )}
-                  </div>
-                  <Button
-                    variant="outline"
-                    className="shrink-0 self-start sm:self-auto"
-                    onClick={() => onOpen(schedule)}
-                  >
-                    Lihat detail
-                  </Button>
-                </div>
-              );
-            })}
+                  )}
+                </p>
+                <p className="text-xs tabular-nums text-muted-foreground">
+                  {schedule.startTime}–{schedule.endTime} WIB
+                </p>
+              </div>
+              <p className="col-span-2 row-start-2 line-clamp-2 text-sm text-muted-foreground sm:col-span-1 sm:row-start-auto">
+                {assigned
+                  .map((member) => `${member.name} (${member.organization})`)
+                  .join(", ")}
+              </p>
+              <div className="col-start-1 row-start-3 sm:col-start-auto sm:row-start-auto">
+                {status ? (
+                  <StatusBadge status={status} />
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    {
+                      schedule.assignments.filter(
+                        (assignment) => assignment.status === "done",
+                      ).length
+                    }
+                    /{assigned.length} selesai
+                  </span>
+                )}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="col-start-2 row-start-1 sm:col-start-auto sm:row-start-auto"
+                onClick={() => onOpen(schedule)}
+                aria-label={`Lihat detail piket ${formatDate(schedule.date)} pukul ${schedule.startTime}`}
+              >
+                Lihat detail
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+      {pageCount > 1 && (
+        <nav
+          aria-label="Halaman daftar jadwal"
+          className="flex items-center justify-between gap-3"
+        >
+          <p className="text-xs text-muted-foreground" aria-live="polite">
+            Halaman {currentPage + 1} dari {pageCount}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage === 0}
+              onClick={() => setPage(currentPage - 1)}
+            >
+              <ChevronLeft />
+              Sebelumnya
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage === pageCount - 1}
+              onClick={() => setPage(currentPage + 1)}
+            >
+              Berikutnya
+              <ChevronRight />
+            </Button>
           </div>
-        </section>
-      ))}
+        </nav>
+      )}
     </div>
   );
 }
@@ -235,22 +264,28 @@ function ScheduleDay({
       {...props}
       ref={ref}
       variant="ghost"
+      data-day={dateKey(day.date)}
+      aria-current={modifiers.today ? "date" : undefined}
+      aria-label={`${formatDate(dateKey(day.date))}${modifiers.today ? ", hari ini" : ""}${events.length > 0 ? `, ${events.length} jadwal` : ""}`}
       className={cn(
-        "flex h-20 w-full flex-col items-start justify-start gap-1 overflow-hidden rounded-none px-1 py-2 font-normal sm:h-28 sm:px-2 lg:h-32",
-        modifiers.selected && "bg-muted",
+        "flex h-16 w-full flex-col items-center justify-center gap-1.5 overflow-hidden rounded-lg p-1 font-normal md:h-28 md:items-start md:justify-start md:gap-1 md:rounded-none md:px-2 md:py-2 lg:h-32",
+        modifiers.today && "bg-primary/5 ring-1 ring-primary ring-inset",
+        modifiers.selected &&
+          !modifiers.today &&
+          "bg-muted ring-1 ring-border ring-inset",
         modifiers.outside && "opacity-40",
         className,
       )}
     >
       <span
         className={cn(
-          "flex size-6 shrink-0 items-center justify-center rounded-md text-xs tabular-nums",
-          modifiers.today && "bg-primary font-medium text-primary-foreground",
+          "flex size-8 shrink-0 items-center justify-center rounded-full text-sm tabular-nums md:size-6 md:rounded-md md:text-xs",
+          modifiers.today && "bg-primary font-semibold text-primary-foreground",
         )}
       >
         {day.date.getDate()}
       </span>
-      <span className="hidden w-full space-y-1 sm:block">
+      <span className="hidden w-full space-y-1 md:block">
         {events.slice(0, 2).map((schedule) => (
           <span
             key={schedule.id}
@@ -269,9 +304,11 @@ function ScheduleDay({
         )}
       </span>
       {events.length > 0 && (
-        <span className="text-[10px] text-muted-foreground sm:hidden">
-          {events.length} jadwal
-        </span>
+        <span
+          data-slot="calendar-event-dot"
+          aria-hidden="true"
+          className="size-1.5 shrink-0 rounded-full bg-foreground md:hidden"
+        />
       )}
     </Button>
   );
@@ -311,15 +348,18 @@ export function ScheduleCalendar({
         aria-label="Kalender jadwal bulanan"
       >
         <div className="flex items-center justify-between gap-2 border-b p-3 sm:p-4">
-          <h3 className="text-base font-medium capitalize">
-            {month.toLocaleDateString("id-ID", {
-              month: "long",
-              year: "numeric",
-            })}
+          <h3 className="text-sm font-medium capitalize md:text-base">
+            <span className="block md:inline">
+              {month.toLocaleDateString("id-ID", { month: "long" })}
+            </span>{" "}
+            <span className="text-xs text-muted-foreground md:text-base md:text-foreground">
+              {month.getFullYear()}
+            </span>
           </h3>
           <div className="flex items-center gap-1">
             <Button
               variant="outline"
+              className="h-11 md:h-8"
               onClick={() => {
                 const today = jakartaToday();
                 onMonthChange(dateFromKey(today));
@@ -331,6 +371,7 @@ export function ScheduleCalendar({
             <Button
               variant="ghost"
               size="icon"
+              className="size-11 md:size-8"
               aria-label="Bulan sebelumnya"
               onClick={() => moveMonth(-1)}
             >
@@ -339,6 +380,7 @@ export function ScheduleCalendar({
             <Button
               variant="ghost"
               size="icon"
+              className="size-11 md:size-8"
               aria-label="Bulan berikutnya"
               onClick={() => moveMonth(1)}
             >
@@ -351,12 +393,13 @@ export function ScheduleCalendar({
           locale={indonesian}
           weekStartsOn={1}
           month={month}
+          today={dateFromKey(jakartaToday())}
           onMonthChange={onMonthChange}
           selected={dateFromKey(selectedDate)}
           onSelect={(date) => {
             if (date) onDateSelect(dateKey(date));
           }}
-          className="w-full p-0"
+          className="w-full p-2 md:p-0"
           classNames={{
             root: "w-full",
             months: "w-full",
@@ -364,11 +407,11 @@ export function ScheduleCalendar({
             nav: "hidden",
             month_caption: "hidden",
             month_grid: "w-full table-fixed",
-            weekdays: "grid grid-cols-7 border-b",
+            weekdays: "grid grid-cols-7 md:border-b",
             weekday:
-              "py-3 text-center text-xs font-normal text-muted-foreground",
-            week: "mt-0 grid grid-cols-7",
-            day: "group/day relative min-w-0 rounded-none border-r border-b p-0 last:border-r-0",
+              "py-2.5 text-center text-xs font-normal text-muted-foreground md:py-3",
+            week: "mt-0 grid grid-cols-7 gap-1 md:gap-0",
+            day: "group/day relative min-w-0 p-0 md:rounded-none md:border-r md:border-b md:last:border-r-0",
             today: "bg-transparent",
             outside: "text-muted-foreground",
           }}
@@ -378,7 +421,21 @@ export function ScheduleCalendar({
             ),
           }}
         />
-        <div className="flex items-center gap-2 bg-muted/30 p-3 text-xs text-muted-foreground">
+        <div className="flex items-center gap-4 border-t p-3 text-xs text-muted-foreground md:hidden">
+          <span className="flex items-center gap-2">
+            <span
+              aria-hidden="true"
+              className="size-1.5 rounded-full bg-foreground"
+            />
+            Ada jadwal
+          </span>
+          <span className="flex items-center gap-2">
+            <span aria-hidden="true" className="size-3 rounded-sm bg-primary" />
+            Hari ini
+          </span>
+          <span className="ml-auto">WIB</span>
+        </div>
+        <div className="hidden items-center gap-2 bg-muted/30 p-3 text-xs text-muted-foreground md:flex">
           <CalendarDays className="size-3.5" />
           Pilih tanggal untuk melihat jadwal. Semua waktu dalam WIB.
         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import {
   CalendarDays,
   Eye,
@@ -39,29 +39,79 @@ import {
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ThemeToggle } from "@/components/theme-controls";
+import {
   dateFromKey,
   dateKey,
   formatDate,
   jakartaToday,
+  organizations,
+  SCHEDULE_TITLE,
+  SCHEDULE_LOCATION,
+  type Organization,
   type Member,
   type Schedule,
-} from "@/lib/demo-data";
+} from "@/lib/domain";
+
+function PasswordInput({
+  label = "kata sandi",
+  className,
+  ...props
+}: React.ComponentProps<typeof Input> & { label?: string }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <Input
+        {...props}
+        className={`pr-10 ${className ?? ""}`}
+        type={visible ? "text" : "password"}
+      />
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="absolute top-0 right-0"
+        aria-label={`${visible ? "Sembunyikan" : "Tampilkan"} ${label}`}
+        aria-controls={props.id}
+        aria-pressed={visible}
+        onClick={() => setVisible(!visible)}
+      >
+        {visible ? <EyeOff /> : <Eye />}
+      </Button>
+    </div>
+  );
+}
 
 export function LoginScreen({
   onLogin,
 }: {
-  onLogin: (email: string, password: string) => string | null;
+  onLogin: (email: string, password: string) => Promise<string | null>;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
-  function submit(event: FormEvent<HTMLFormElement>) {
+  const [pending, setPending] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError(onLogin(email.trim().toLowerCase(), password) ?? "");
+    if (pending) return;
+    setPending(true);
+    try {
+      setError((await onLogin(email.trim().toLowerCase(), password)) ?? "");
+    } finally {
+      setPending(false);
+    }
   }
   return (
-    <div className="grid min-h-svh lg:grid-cols-2">
+    <div className="relative grid min-h-svh lg:grid-cols-2">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <section className="hidden flex-col justify-between border-r bg-muted/40 p-12 lg:flex">
         <div className="flex items-center gap-3 text-lg font-semibold">
           <CalendarDays className="size-7" />
@@ -88,7 +138,7 @@ export function LoginScreen({
             </div>
             <div className="flex items-center gap-3">
               <Mail className="size-4 text-muted-foreground" />
-              Pengingat email pada tahap backend
+              Email penugasan dan pengingat sehari sebelumnya
             </div>
           </div>
         </div>
@@ -128,44 +178,26 @@ export function LoginScreen({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Kata sandi</Label>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    name="password"
-                    className="pr-10"
-                    type={showPassword ? "text" : "password"}
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(event) => {
-                      setPassword(event.target.value);
-                      setError("");
-                    }}
-                    required
-                    aria-invalid={Boolean(error)}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute top-0 right-0"
-                    aria-label={
-                      showPassword
-                        ? "Sembunyikan kata sandi"
-                        : "Tampilkan kata sandi"
-                    }
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? <EyeOff /> : <Eye />}
-                  </Button>
-                </div>
+                <PasswordInput
+                  id="password"
+                  name="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    setError("");
+                  }}
+                  required
+                  aria-invalid={Boolean(error)}
+                />
               </div>
               {error && (
                 <Alert variant="destructive" role="alert">
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
-              <Button className="w-full" type="submit">
-                Masuk
+              <Button className="w-full" type="submit" disabled={pending}>
+                {pending ? "Sedang masuk…" : "Masuk"}
               </Button>
             </form>
           </CardContent>
@@ -174,34 +206,6 @@ export function LoginScreen({
             sandi awal.
           </CardFooter>
         </Card>
-        <div className="w-full max-w-sm space-y-3 rounded-xl border border-dashed p-4 text-sm">
-          <p className="font-medium">Pratinjau frontend</p>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Data contoh hanya berlaku selama halaman ini terbuka. Tidak ada
-            email yang dikirim. Gunakan kata sandi contoh saja.
-          </p>
-          <div className="grid gap-2 text-xs">
-            <div>
-              <span className="font-medium">Admin:</span> admin / admin
-            </div>
-            <div className="break-all">
-              <span className="font-medium">Anggota:</span> nadia@example.com /
-              nadia@example.com
-            </div>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={() => {
-              setEmail("nadia@example.com");
-              setPassword("nadia@example.com");
-              setError("");
-            }}
-          >
-            Isi akun contoh anggota
-          </Button>
-        </div>
       </main>
     </div>
   );
@@ -209,21 +213,28 @@ export function LoginScreen({
 
 export function PasswordForm({
   requiredChange = false,
+  firstChange = false,
   onSave,
 }: {
   requiredChange?: boolean;
-  onSave: (currentPassword: string, newPassword: string) => string | null;
+  firstChange?: boolean;
+  onSave: (
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<string | null>;
 }) {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
-  function submit(event: FormEvent<HTMLFormElement>) {
+  const [pending, setPending] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pending) return;
     setSuccess(false);
-    if (next.length < 8) {
-      setError("Gunakan setidaknya 8 karakter untuk kata sandi baru.");
+    if (next.length < 12) {
+      setError("Gunakan setidaknya 12 karakter untuk kata sandi baru.");
       return;
     }
     if (next !== confirmation) {
@@ -234,7 +245,13 @@ export function PasswordForm({
       setError("Kata sandi baru harus berbeda dari kata sandi saat ini.");
       return;
     }
-    const result = onSave(current, next);
+    setPending(true);
+    let result: string | null;
+    try {
+      result = await onSave(current, next);
+    } finally {
+      setPending(false);
+    }
     if (result) {
       setError(result);
       return;
@@ -247,38 +264,43 @@ export function PasswordForm({
   }
   return (
     <form onSubmit={submit} className="space-y-5">
-      <div className="space-y-2">
-        <Label htmlFor="current-password">Kata sandi saat ini</Label>
-        <Input
-          id="current-password"
-          type="password"
-          value={current}
-          onChange={(event) => setCurrent(event.target.value)}
-          required
-          autoComplete="current-password"
-        />
-      </div>
+      {!firstChange && (
+        <div className="space-y-2">
+          <Label htmlFor="current-password">Kata sandi saat ini</Label>
+          <PasswordInput
+            id="current-password"
+            label="kata sandi saat ini"
+            value={current}
+            onChange={(event) => setCurrent(event.target.value)}
+            required
+            autoComplete="current-password"
+          />
+        </div>
+      )}
       <div className="space-y-2">
         <Label htmlFor="new-password">Kata sandi baru</Label>
-        <Input
+        <PasswordInput
           id="new-password"
-          type="password"
-          minLength={8}
+          label="kata sandi baru"
+          minLength={12}
+          maxLength={128}
           value={next}
           onChange={(event) => setNext(event.target.value)}
           required
           autoComplete="new-password"
         />
         <p className="text-xs text-muted-foreground">
-          Minimal 8 karakter. Gunakan kata sandi contoh untuk pratinjau ini.
+          Minimal 12 karakter. Gunakan kata sandi unik yang berbeda dari email
+          Anda.
         </p>
       </div>
       <div className="space-y-2">
         <Label htmlFor="confirm-password">Konfirmasi kata sandi baru</Label>
-        <Input
+        <PasswordInput
           id="confirm-password"
-          type="password"
-          minLength={8}
+          label="konfirmasi kata sandi baru"
+          minLength={12}
+          maxLength={128}
           value={confirmation}
           onChange={(event) => setConfirmation(event.target.value)}
           required
@@ -294,12 +316,20 @@ export function PasswordForm({
         <Alert role="status">
           <ShieldCheck />
           <AlertDescription>
-            Kata sandi contoh berhasil diperbarui untuk sesi ini.
+            Kata sandi berhasil diperbarui. Sesi lain telah dikeluarkan.
           </AlertDescription>
         </Alert>
       )}
-      <Button type="submit" className={requiredChange ? "w-full" : ""}>
-        {requiredChange ? "Simpan dan lanjutkan" : "Simpan kata sandi"}
+      <Button
+        type="submit"
+        disabled={pending}
+        className={requiredChange ? "w-full" : ""}
+      >
+        {pending
+          ? "Menyimpan…"
+          : requiredChange
+            ? "Simpan dan lanjutkan"
+            : "Simpan kata sandi"}
       </Button>
     </form>
   );
@@ -309,11 +339,14 @@ export function RequiredPasswordScreen({
   onSave,
   onLogout,
 }: {
-  onSave: (current: string, next: string) => string | null;
+  onSave: (current: string, next: string) => Promise<string | null>;
   onLogout: () => void;
 }) {
   return (
-    <main className="flex min-h-svh items-center justify-center p-5">
+    <main className="relative flex min-h-svh items-center justify-center p-5">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <Card className="w-full max-w-sm">
         <CardHeader>
           <KeyRound className="mb-2 size-6" />
@@ -326,11 +359,11 @@ export function RequiredPasswordScreen({
           <Alert className="mb-6">
             <AlertTitle>Langkah wajib untuk admin</AlertTitle>
             <AlertDescription>
-              Kata sandi awal Anda adalah admin. Pilih kata sandi contoh baru
-              untuk melanjutkan pratinjau.
+              Pilih kata sandi baru untuk melindungi akun. Kata sandi awal tidak
+              perlu dimasukkan lagi.
             </AlertDescription>
           </Alert>
-          <PasswordForm requiredChange onSave={onSave} />
+          <PasswordForm requiredChange firstChange onSave={onSave} />
         </CardContent>
         <CardFooter className="justify-center border-t">
           <Button variant="ghost" onClick={onLogout}>
@@ -351,11 +384,17 @@ export function MemberDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   members: Member[];
-  onSave: (member: Omit<Member, "id">) => void;
+  onSave: (
+    member: Omit<Member, "id"> & { requestId: string },
+  ) => Promise<string | null>;
 }) {
   const [error, setError] = useState("");
-  function submit(event: FormEvent<HTMLFormElement>) {
+  const [organization, setOrganization] = useState<Organization | null>(null);
+  const [pending, setPending] = useState(false);
+  const requestId = useRef<string | null>(null);
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pending) return;
     const form = new FormData(event.currentTarget);
     const name = String(form.get("name") ?? "").trim();
     const email = String(form.get("email") ?? "")
@@ -369,7 +408,29 @@ export function MemberDialog({
       setError("Email ini sudah terdaftar. Gunakan email lain.");
       return;
     }
-    onSave({ name, email });
+    if (!organization) {
+      setError("Pilih organisasi anggota.");
+      return;
+    }
+    requestId.current ??= crypto.randomUUID();
+    setPending(true);
+    let result: string | null;
+    try {
+      result = await onSave({
+        name,
+        email,
+        organization,
+        requestId: requestId.current,
+      });
+    } finally {
+      setPending(false);
+    }
+    if (result) {
+      setError(result);
+      return;
+    }
+    requestId.current = null;
+    setOrganization(null);
     setError("");
     onOpenChange(false);
   }
@@ -378,6 +439,11 @@ export function MemberDialog({
       open={open}
       onOpenChange={(value) => {
         setError("");
+        if (pending) return;
+        if (!value) {
+          setOrganization(null);
+          requestId.current = null;
+        }
         onOpenChange(value);
       }}
     >
@@ -385,7 +451,7 @@ export function MemberDialog({
         <DialogHeader>
           <DialogTitle>Tambah anggota</DialogTitle>
           <DialogDescription>
-            Cukup nama dan email untuk membuat akun anggota.
+            Isi nama, email, dan organisasi untuk membuat akun anggota.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-5">
@@ -410,6 +476,31 @@ export function MemberDialog({
               required
             />
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="member-organization">Organisasi</Label>
+            <Select
+              items={organizations.map((value) => ({ value, label: value }))}
+              value={organization}
+              onValueChange={(value) =>
+                setOrganization(value as Organization | null)
+              }
+            >
+              <SelectTrigger
+                id="member-organization"
+                className="w-full"
+                aria-invalid={Boolean(error && !organization)}
+              >
+                <SelectValue placeholder="Pilih organisasi" />
+              </SelectTrigger>
+              <SelectContent>
+                {organizations.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {value}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <Alert>
             <KeyRound />
             <AlertDescription>
@@ -426,11 +517,14 @@ export function MemberDialog({
             <Button
               type="button"
               variant="outline"
+              disabled={pending}
               onClick={() => onOpenChange(false)}
             >
               Batal
             </Button>
-            <Button type="submit">Tambah anggota</Button>
+            <Button type="submit" disabled={pending}>
+              {pending ? "Menyimpan…" : "Tambah anggota"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -451,7 +545,9 @@ export function ScheduleDialog({
   members: Member[];
   schedule?: Schedule;
   initialDate?: string;
-  onSave: (value: Omit<Schedule, "id">) => void;
+  onSave: (
+    value: Omit<Schedule, "id"> & { requestId: string },
+  ) => Promise<string | null>;
 }) {
   const [date, setDate] = useState(
     schedule?.date ?? initialDate ?? jakartaToday(),
@@ -460,17 +556,28 @@ export function ScheduleDialog({
     schedule?.assignments.map((assignment) => assignment.memberId) ?? [],
   );
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [organizationFilter, setOrganizationFilter] = useState("all");
+  const organizationOptions = [
+    { value: "all", label: "Semua organisasi" },
+    ...organizations.map((value) => ({ value, label: value })),
+  ];
+  const visibleMembers = members.filter(
+    (member) =>
+      organizationFilter === "all" ||
+      member.organization === organizationFilter,
+  );
+  const hiddenSelected = selected.filter(
+    (memberId) => !visibleMembers.some((member) => member.id === memberId),
+  ).length;
   const [error, setError] = useState("");
-  function submit(event: FormEvent<HTMLFormElement>) {
+  const [pending, setPending] = useState(false);
+  const requestId = useRef<string | null>(null);
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pending) return;
     const form = new FormData(event.currentTarget);
-    const title = String(form.get("title") ?? "").trim();
     const startTime = String(form.get("startTime") ?? "");
     const endTime = String(form.get("endTime") ?? "");
-    if (!title) {
-      setError("Judul jadwal tidak boleh kosong.");
-      return;
-    }
     if (endTime <= startTime) {
       setError("Waktu selesai harus setelah waktu mulai pada hari yang sama.");
       return;
@@ -479,44 +586,51 @@ export function ScheduleDialog({
       setError("Pilih setidaknya satu anggota untuk jadwal ini.");
       return;
     }
-    onSave({
-      title,
-      date,
-      startTime,
-      endTime,
-      location: String(form.get("location") ?? "").trim(),
-      notes: String(form.get("notes") ?? "").trim(),
-      assignments: selected.map((memberId) => ({
-        memberId,
-        status:
-          schedule?.assignments.find(
-            (assignment) => assignment.memberId === memberId,
-          )?.status ?? "scheduled",
-      })),
-    });
+    requestId.current ??= crypto.randomUUID();
+    setPending(true);
+    let result: string | null;
+    try {
+      result = await onSave({
+        requestId: requestId.current,
+        version: schedule?.version,
+        title: SCHEDULE_TITLE,
+        date,
+        startTime,
+        endTime,
+        location: SCHEDULE_LOCATION,
+        notes: String(form.get("notes") ?? "").trim(),
+        assignments: selected.map((memberId) => ({
+          memberId,
+          status:
+            schedule?.assignments.find(
+              (assignment) => assignment.memberId === memberId,
+            )?.status ?? "scheduled",
+        })),
+      });
+    } finally {
+      setPending(false);
+    }
+    if (result) {
+      setError(result);
+      return;
+    }
     onOpenChange(false);
   }
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(value) => {
+        if (!pending) onOpenChange(value);
+      }}
+    >
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{schedule ? "Edit jadwal" : "Buat jadwal"}</DialogTitle>
           <DialogDescription>
-            Tentukan waktu dan anggota yang bertugas.
+            Piket di Ruang Opsi. Tentukan waktu dan anggota yang bertugas.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-5">
-          <div className="space-y-2">
-            <Label htmlFor="schedule-title">Judul jadwal</Label>
-            <Input
-              id="schedule-title"
-              name="title"
-              placeholder="Contoh: Piket ruang kerja"
-              defaultValue={schedule?.title}
-              maxLength={120}
-              required
-            />
-          </div>
           <div className="space-y-2">
             <Label>Tanggal</Label>
             <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
@@ -572,21 +686,6 @@ export function ScheduleDialog({
               />
             </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="schedule-location">
-              Lokasi{" "}
-              <span className="font-normal text-muted-foreground">
-                (opsional)
-              </span>
-            </Label>
-            <Input
-              id="schedule-location"
-              name="location"
-              placeholder="Ruang atau tempat kegiatan"
-              defaultValue={schedule?.location}
-              maxLength={160}
-            />
-          </div>
           <fieldset className="space-y-3">
             <legend className="mb-2 text-sm font-medium">
               Anggota yang bertugas{" "}
@@ -594,13 +693,40 @@ export function ScheduleDialog({
                 ({selected.length} dipilih)
               </span>
             </legend>
+            <Select
+              items={organizationOptions}
+              value={organizationFilter}
+              onValueChange={(value) => setOrganizationFilter(String(value))}
+            >
+              <SelectTrigger
+                aria-label="Filter organisasi penugasan"
+                className="w-full"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {organizationOptions.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {hiddenSelected > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {hiddenSelected} anggota dari organisasi lain juga dipilih.
+                Pilihan tetap tersimpan.
+              </p>
+            )}
             <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg border p-2">
-              {members.length === 0 ? (
+              {visibleMembers.length === 0 ? (
                 <p className="p-2 text-sm text-muted-foreground">
-                  Tambahkan anggota terlebih dahulu.
+                  {members.length === 0
+                    ? "Tambahkan anggota terlebih dahulu."
+                    : "Belum ada anggota dari organisasi ini."}
                 </p>
               ) : (
-                members.map((member) => (
+                visibleMembers.map((member) => (
                   <Label
                     key={member.id}
                     htmlFor={`assign-${member.id}`}
@@ -622,7 +748,7 @@ export function ScheduleDialog({
                         {member.name}
                       </span>
                       <span className="block truncate text-xs font-normal text-muted-foreground">
-                        {member.email}
+                        {member.organization} · {member.email}
                       </span>
                     </span>
                   </Label>
@@ -649,9 +775,9 @@ export function ScheduleDialog({
           <Alert>
             <Mail />
             <AlertDescription>
-              Pada aplikasi lengkap, email berisi tautan jadwal dikirim saat
-              penugasan dan sehari sebelum jadwal. Pratinjau ini tidak mengirim
-              email.
+              Email penugasan dikirim setelah jadwal disimpan pada hari ini.
+              Pengingat tambahan dikirim sehari sebelum jadwal, menggunakan
+              waktu WIB.
             </AlertDescription>
           </Alert>
           {error && (
@@ -663,12 +789,17 @@ export function ScheduleDialog({
             <Button
               type="button"
               variant="outline"
+              disabled={pending}
               onClick={() => onOpenChange(false)}
             >
               Batal
             </Button>
-            <Button type="submit">
-              {schedule ? "Simpan perubahan" : "Buat jadwal"}
+            <Button type="submit" disabled={pending}>
+              {pending
+                ? "Menyimpan…"
+                : schedule
+                  ? "Simpan perubahan"
+                  : "Buat jadwal"}
             </Button>
           </DialogFooter>
         </form>

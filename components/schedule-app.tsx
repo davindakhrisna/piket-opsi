@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Bell,
   CalendarDays,
-  CheckCheck,
   ChevronDown,
   CircleHelp,
   Clock3,
@@ -16,13 +15,19 @@ import {
   MapPin,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
   Settings,
   ShieldCheck,
+  SlidersHorizontal,
   Trash2,
   Users,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { api, ApiError } from "@/lib/api-client";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { ThemeToggle } from "@/components/theme-controls";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -72,8 +77,10 @@ import {
   Sheet,
   SheetContent,
   SheetDescription,
+  SheetFooter,
   SheetHeader,
   SheetTitle,
+  SheetTrigger,
 } from "@/components/ui/sheet";
 import {
   Sidebar,
@@ -89,7 +96,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
-  SidebarSeparator,
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
@@ -121,7 +127,6 @@ import {
   StatusBadge,
 } from "@/components/schedule-views";
 import {
-  createDemoData,
   dateFromKey,
   filterSchedules,
   formatDate,
@@ -129,10 +134,17 @@ import {
   jakartaToday,
   shiftDate,
   statusLabels,
+  type DayRange,
   type AssignmentStatus,
   type Member,
   type Schedule,
-} from "@/lib/demo-data";
+  type AppSnapshot,
+  type SessionUser,
+} from "@/lib/domain";
+
+type AppUser = Omit<Member, "organization"> & {
+  organization?: Member["organization"];
+};
 
 type Section = "schedules" | "members" | "reminders" | "settings";
 const sectionLabels: Record<Section, string> = {
@@ -157,7 +169,7 @@ function AppSidebar({
 }: {
   section: Section;
   onNavigate: (section: Section) => void;
-  user: Member;
+  user: AppUser;
   isAdmin: boolean;
   memberCount: number;
   onLogout: () => void;
@@ -168,8 +180,11 @@ function AppSidebar({
     if (isMobile) setOpenMobile(false);
   }
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader className="p-3">
+    <Sidebar
+      collapsible="icon"
+      className="group-data-[collapsible=icon]:[&_[data-sidebar=menu-button]]:mx-auto"
+    >
+      <SidebarHeader className="border-b border-sidebar-border p-3">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
@@ -190,7 +205,6 @@ function AppSidebar({
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-      <SidebarSeparator />
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel>Ruang kerja</SidebarGroupLabel>
@@ -231,24 +245,23 @@ function AppSidebar({
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  tooltip="Tentang pratinjau"
+                  tooltip="Tentang Piket Opsi"
                   onClick={() =>
-                    toast.info("Pratinjau frontend", {
+                    toast.info("Piket Opsi", {
                       description:
-                        "Data contoh disimpan dalam memori halaman. Akun dan email asli akan terhubung pada tahap backend.",
+                        "Jadwal Ruang Opsi menggunakan WIB. Email dikirim saat penugasan dan sehari sebelum jadwal.",
                     })
                   }
                 >
                   <CircleHelp />
-                  <span>Tentang pratinjau</span>
+                  <span>Tentang Piket Opsi</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarSeparator />
-      <SidebarFooter className="p-3">
+      <SidebarFooter className="border-t border-sidebar-border p-3">
         <SidebarMenu>
           <SidebarMenuItem>
             <DropdownMenu>
@@ -286,16 +299,21 @@ function AppSidebar({
 }
 
 export default function ScheduleApp() {
-  const [data, setData] = useState(createDemoData);
-  const [passwords, setPasswords] = useState<Record<string, string>>({
-    admin: "admin",
-  });
-  const [userId, setUserId] = useState<string | null>(null);
-  const [adminMustChange, setAdminMustChange] = useState(true);
+  const isMobile = useIsMobile();
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [data, setData] = useState<
+    Pick<AppSnapshot, "members" | "schedules" | "emails">
+  >({ members: [], schedules: [], emails: [] });
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [pending, setPending] = useState(false);
+  const statusPending = useRef(false);
   const [section, setSection] = useState<Section>("schedules");
   const [view, setView] = useState("detail");
   const [memberFilter, setMemberFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("scheduled");
+  const [dayRange, setDayRange] = useState<DayRange>("all");
   const [search, setSearch] = useState("");
   const [memberSearch, setMemberSearch] = useState("");
   const [month, setMonth] = useState(() => dateFromKey(jakartaToday()));
@@ -309,10 +327,8 @@ export default function ScheduleApp() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [emailPreviewId, setEmailPreviewId] = useState<string | null>(null);
   const [emailKind, setEmailKind] = useState("assignment");
-  const isAdmin = userId === "admin";
-  const user: Member | undefined = isAdmin
-    ? { id: "admin", name: "Admin", email: "admin" }
-    : data.members.find((member) => member.id === userId);
+  const userId = user?.id ?? null;
+  const isAdmin = user?.role === "admin";
   const selectedSchedule = data.schedules.find(
     (schedule) => schedule.id === selectedId,
   );
@@ -321,6 +337,93 @@ export default function ScheduleApp() {
   );
   const today = jakartaToday();
 
+  const applySnapshot = useCallback(
+    (value: AppSnapshot, initialize = false) => {
+      setUser(value.user);
+      setData({
+        members: value.members,
+        schedules: value.schedules,
+        emails: value.emails,
+      });
+      setLoadError("");
+      if (initialize) {
+        setView(value.user.role === "admin" ? "calendar" : "detail");
+        setMemberFilter(value.user.role === "admin" ? "all" : value.user.id);
+        setSection("schedules");
+        setStatusFilter("scheduled");
+        setDayRange("all");
+        setSearch("");
+        const id = new URLSearchParams(window.location.search).get("jadwal");
+        setSelectedId(id);
+        if (
+          id &&
+          !value.user.initialPassword &&
+          !value.schedules.some((schedule) => schedule.id === id)
+        )
+          toast.error("Jadwal tidak ditemukan", {
+            description: "Jadwal sudah dihapus atau tautannya tidak valid.",
+          });
+      }
+    },
+    [],
+  );
+
+  const refresh = useCallback(async () => {
+    try {
+      applySnapshot(await api<AppSnapshot>("snapshot"));
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        setUser(null);
+        setData({ members: [], schedules: [], emails: [] });
+      }
+      throw error;
+    }
+  }, [applySnapshot]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    api<AppSnapshot>("snapshot", "GET", undefined, controller.signal)
+      .then((value) => {
+        applySnapshot(value, true);
+        setLoading(false);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        if (!(error instanceof ApiError && error.status === 401))
+          setLoadError(error.message);
+        setLoading(false);
+      });
+    return () => controller.abort();
+  }, [applySnapshot]);
+
+  useEffect(() => {
+    if (!userId) return;
+    const sync = () => {
+      if (document.visibilityState === "visible")
+        void refresh().catch((error) => toast.error(error.message));
+    };
+    const interval = window.setInterval(sync, 60000);
+    window.addEventListener("focus", sync);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", sync);
+    };
+  }, [userId, refresh]);
+
+  useEffect(() => {
+    if (user?.role === "member" && user.initialPassword)
+      toast.info("Lindungi akun Anda", {
+        id: "initial-password",
+        description:
+          "Anda masih menggunakan email sebagai kata sandi. Atur kata sandi baru melalui Pengaturan.",
+        duration: 10000,
+        action: {
+          label: "Atur sekarang",
+          onClick: () => setSection("settings"),
+        },
+      });
+  }, [user?.id, user?.role, user?.initialPassword]);
+
   useEffect(() => {
     const sync = () =>
       setSelectedId(new URLSearchParams(window.location.search).get("jadwal"));
@@ -328,43 +431,50 @@ export default function ScheduleApp() {
     return () => window.removeEventListener("popstate", sync);
   }, []);
 
-  function login(email: string, password: string) {
-    const account =
-      email === "admin"
-        ? { id: "admin", email: "admin" }
-        : data.members.find((member) => member.email === email);
-    if (!account || password !== (passwords[account.id] ?? account.email))
-      return "Email atau kata sandi tidak cocok. Periksa kembali akun Anda.";
-    setUserId(account.id);
-    setView("detail");
-    setMemberFilter(account.id === "admin" ? "all" : account.id);
-    setSection("schedules");
-    setStatusFilter("all");
-    setSearch("");
-    const id = new URLSearchParams(window.location.search).get("jadwal");
-    setSelectedId(id);
-    if (id && !data.schedules.some((schedule) => schedule.id === id))
-      toast.error("Jadwal tidak ditemukan", {
-        description:
-          "Jadwal mungkin sudah dihapus atau tautan tidak tersedia pada data contoh ini.",
-      });
-    return null;
+  async function login(email: string, password: string) {
+    try {
+      await api("auth/login", "POST", { email, password });
+      applySnapshot(await api<AppSnapshot>("snapshot"), true);
+      return null;
+    } catch (error) {
+      return (error as Error).message;
+    }
   }
-  function logout() {
-    setUserId(null);
+  async function logout() {
+    try {
+      await api("auth/logout", "POST", {});
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 401)) {
+        toast.error((error as Error).message);
+        return;
+      }
+    }
+    setFilterSheetOpen(false);
+    setUser(null);
+    setData({ members: [], schedules: [], emails: [] });
     setSelectedId(null);
     setEmailPreviewId(null);
     setScheduleEditor(null);
     setDeleteId(null);
     setMemberDialogOpen(false);
   }
-  function changePassword(current: string, next: string) {
-    if (!user) return "Masuk kembali untuk mengubah kata sandi.";
-    if (current !== (passwords[user.id] ?? user.email))
-      return "Kata sandi saat ini tidak cocok.";
-    setPasswords((previous) => ({ ...previous, [user.id]: next }));
-    if (isAdmin) setAdminMustChange(false);
-    return null;
+  async function changePassword(current: string, next: string) {
+    try {
+      const result = await api<{ user: SessionUser }>("auth/password", "POST", {
+        currentPassword: current,
+        newPassword: next,
+      });
+      setUser(result.user);
+      toast.dismiss("initial-password");
+      await refresh().catch((error) =>
+        toast.error("Kata sandi telah diubah. Muat ulang untuk melihat data terbaru.", {
+          description: error.message,
+        }),
+      );
+      return null;
+    } catch (error) {
+      return (error as Error).message;
+    }
   }
   function openSchedule(schedule: Schedule) {
     setSelectedId(schedule.id);
@@ -378,59 +488,98 @@ export default function ScheduleApp() {
     url.searchParams.delete("jadwal");
     window.history.pushState({}, "", url);
   }
-  function addMember(value: Omit<Member, "id">) {
-    if (!isAdmin) return;
-    setData((previous) => ({
-      ...previous,
-      members: [...previous.members, { ...value, id: crypto.randomUUID() }],
-    }));
-    toast.success("Anggota ditambahkan", {
-      description: `${value.name} dapat masuk dengan email sebagai kata sandi awal dalam pratinjau ini.`,
-    });
+  async function mutation(path: string, method: string, value: unknown) {
+    try {
+      await api(path, method, value);
+      await refresh().catch((error) =>
+        toast.error(
+          "Perubahan tersimpan. Muat ulang untuk melihat data terbaru.",
+          { description: error.message },
+        ),
+      );
+      return null;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409)
+        await refresh().catch(() => {});
+      return (error as Error).message;
+    }
   }
-  function saveSchedule(value: Omit<Schedule, "id">) {
-    if (!isAdmin) return;
-    const existingId = scheduleEditor?.schedule?.id;
-    setData((previous) => ({
-      ...previous,
-      schedules: existingId
-        ? previous.schedules.map((schedule) =>
-            schedule.id === existingId
-              ? { ...value, id: existingId }
-              : schedule,
-          )
-        : [...previous.schedules, { ...value, id: crypto.randomUUID() }],
-    }));
-    setSelectedDate(value.date);
-    setMonth(dateFromKey(value.date));
-    toast.success(existingId ? "Jadwal diperbarui" : "Jadwal dibuat", {
-      description: "Tersimpan pada data contoh. Email belum dikirim.",
-    });
+  async function addMember(value: Omit<Member, "id"> & { requestId: string }) {
+    const error = await mutation("members", "POST", value);
+    if (!error)
+      toast.success("Anggota ditambahkan", {
+        description:
+          value.name +
+          " dapat masuk menggunakan email sebagai kata sandi awal.",
+      });
+    return error;
   }
-  function updateStatus(
+  async function saveSchedule(
+    value: Omit<Schedule, "id"> & { requestId: string },
+  ) {
+    const id = scheduleEditor?.schedule?.id;
+    const error = await mutation(
+      id ? "schedules/" + id : "schedules",
+      id ? "PUT" : "POST",
+      value,
+    );
+    if (!error) {
+      setSelectedDate(value.date);
+      setMonth(dateFromKey(value.date));
+      toast.success(id ? "Jadwal diperbarui" : "Jadwal dibuat", {
+        description: "Email penugasan masuk antrean pengiriman hari ini.",
+      });
+    }
+    return error;
+  }
+  async function updateStatus(
     scheduleId: string,
     memberId: string,
     status: AssignmentStatus,
   ) {
-    if ((!isAdmin && memberId !== userId) || !userId) return;
-    setData((previous) => ({
-      ...previous,
-      schedules: previous.schedules.map((schedule) =>
-        schedule.id === scheduleId
-          ? {
-              ...schedule,
-              assignments: schedule.assignments.map((assignment) =>
-                assignment.memberId === memberId
-                  ? { ...assignment, status }
-                  : assignment,
-              ),
-            }
-          : schedule,
-      ),
-    }));
-    toast.success(
-      `Status diubah menjadi ${statusLabels[status].toLowerCase()}`,
-    );
+    if (statusPending.current) return;
+    statusPending.current = true;
+    setPending(true);
+    try {
+      const error = await mutation(
+        "schedules/" + scheduleId + "/status",
+        "PATCH",
+        {
+          memberId,
+          status,
+          version: data.schedules.find((schedule) => schedule.id === scheduleId)
+            ?.version,
+        },
+      );
+      if (error) toast.error(error);
+      else
+        toast.success(
+          "Status diubah menjadi " + statusLabels[status].toLowerCase(),
+        );
+    } finally {
+      statusPending.current = false;
+      setPending(false);
+    }
+  }
+  async function removeSchedule() {
+    if (!deleteId || pending) return;
+    setPending(true);
+    try {
+      const error = await mutation("schedules/" + deleteId, "DELETE", {
+        version: data.schedules.find((schedule) => schedule.id === deleteId)
+          ?.version,
+      });
+      if (error) {
+        toast.error(error);
+        return;
+      }
+      if (selectedId === deleteId) closeSchedule();
+      if (emailPreviewId === deleteId) setEmailPreviewId(null);
+      setDeleteId(null);
+      toast.success("Jadwal dihapus");
+    } finally {
+      setPending(false);
+    }
   }
   async function copyScheduleLink(schedule: Schedule) {
     const url = new URL(window.location.href);
@@ -449,11 +598,34 @@ export default function ScheduleApp() {
   function resetFilters() {
     setSearch("");
     setMemberFilter(isAdmin ? "all" : (userId ?? "all"));
-    setStatusFilter("all");
+    setStatusFilter("scheduled");
+    setDayRange("all");
   }
 
+  if (loading || loadError)
+    return (
+      <main className="flex min-h-svh items-center justify-center p-5">
+        <Card className="w-full max-w-sm">
+          <CardHeader>
+            <CardTitle>
+              {loading ? "Memuat Piket Opsi…" : "Koneksi belum tersedia"}
+            </CardTitle>
+            <CardDescription>
+              {loadError || "Memeriksa sesi dan jadwal Anda."}
+            </CardDescription>
+          </CardHeader>
+          {loadError && (
+            <CardContent>
+              <Button onClick={() => window.location.reload()}>
+                Coba lagi
+              </Button>
+            </CardContent>
+          )}
+        </Card>
+      </main>
+    );
   if (!user) return <LoginScreen onLogin={login} />;
-  if (isAdmin && adminMustChange)
+  if (isAdmin && user.initialPassword)
     return <RequiredPasswordScreen onSave={changePassword} onLogout={logout} />;
 
   const filtered = filterSchedules(
@@ -461,24 +633,16 @@ export default function ScheduleApp() {
     memberFilter,
     statusFilter,
     search,
-  );
-  const upcoming = filtered.filter((schedule) => schedule.date >= today);
-  const completed = filtered.reduce(
-    (count, schedule) =>
-      count +
-      schedule.assignments.filter(
-        (assignment) =>
-          assignment.status === "done" &&
-          (memberFilter === "all" || assignment.memberId === memberFilter),
-      ).length,
-    0,
+    dayRange,
+    today,
   );
   const hasFilters =
     search !== "" ||
-    statusFilter !== "all" ||
+    statusFilter !== "scheduled" ||
+    dayRange !== "all" ||
     memberFilter !== (isAdmin ? "all" : user.id);
   const visibleMembers = data.members.filter((member) =>
-    `${member.name} ${member.email}`
+    `${member.name} ${member.email} ${member.organization}`
       .toLocaleLowerCase("id-ID")
       .includes(memberSearch.trim().toLocaleLowerCase("id-ID")),
   );
@@ -496,18 +660,135 @@ export default function ScheduleApp() {
   ).length;
   const memberOptions = [
     { value: "all", label: "Semua anggota" },
-    ...data.members.map((member) => ({
-      value: member.id,
-      label: member.id === user.id ? "Jadwal saya" : member.name,
+    { value: user.id, label: "Jadwal saya" },
+  ];
+  const dayOptions = [
+    { value: "all", label: "Semua tanggal" },
+    ...["3", "7", "14", "30"].map((value) => ({
+      value,
+      label: `${value} hari ke depan`,
     })),
   ];
   const statusOptions = [
     { value: "all", label: "Semua status" },
     ...Object.entries(statusLabels).map(([value, label]) => ({ value, label })),
   ];
+  const scopeLabel =
+    memberFilter === "all"
+      ? "Semua anggota"
+      : memberFilter === user.id
+        ? "Jadwal saya"
+        : data.members.find((member) => member.id === memberFilter)?.name;
+  const filterCount = [
+    search !== "",
+    memberFilter !== (isAdmin ? "all" : user.id),
+    statusFilter !== "scheduled",
+    dayRange !== "all",
+  ].filter(Boolean).length;
+  const filterControls = (
+    <div className="grid gap-5 md:flex md:flex-wrap md:items-center md:gap-2">
+      {!isAdmin && (
+        <div className="space-y-2 md:space-y-0">
+          <Label htmlFor="schedule-member-filter" className="md:hidden">
+            Anggota
+          </Label>
+          <Select
+            items={memberOptions}
+            value={memberFilter}
+            onValueChange={(value) => setMemberFilter(String(value))}
+          >
+            <SelectTrigger
+              id="schedule-member-filter"
+              aria-label="Filter anggota"
+              className="h-11! w-full min-w-0 md:h-8! md:w-fit md:min-w-44"
+            >
+              <Users />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {memberOptions.map((item) => (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      <div className="space-y-2 md:space-y-0">
+        <Label htmlFor="schedule-status-filter" className="md:hidden">
+          Status
+        </Label>
+        <Select
+          items={statusOptions}
+          value={statusFilter}
+          onValueChange={(value) => setStatusFilter(String(value))}
+        >
+          <SelectTrigger
+            id="schedule-status-filter"
+            aria-label="Filter status"
+            className="h-11! w-full min-w-0 md:h-8! md:w-fit md:min-w-36"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {statusOptions.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2 md:space-y-0">
+        <Label htmlFor="schedule-day-filter" className="md:hidden">
+          Rentang hari
+        </Label>
+        <Select
+          items={dayOptions}
+          value={dayRange}
+          onValueChange={(value) => setDayRange(value as DayRange)}
+        >
+          <SelectTrigger
+            id="schedule-day-filter"
+            aria-label="Filter rentang hari"
+            className="h-11! w-full min-w-0 md:h-8! md:w-fit md:min-w-40"
+          >
+            <CalendarDays />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {dayOptions.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      {isAdmin && memberFilter !== "all" && (
+        <Button
+          variant="outline"
+          className="h-11 md:h-8"
+          onClick={() => setMemberFilter("all")}
+          aria-label="Hapus filter anggota"
+        >
+          {scopeLabel}
+          <X />
+        </Button>
+      )}
+      {hasFilters && (
+        <Button variant="ghost" className="h-11 md:h-8" onClick={resetFilters}>
+          Reset
+        </Button>
+      )}
+    </div>
+  );
 
   return (
-    <SidebarProvider>
+    <SidebarProvider
+      style={{ "--sidebar-width-icon": "4rem" } as React.CSSProperties}
+    >
       <AppSidebar
         section={section}
         onNavigate={setSection}
@@ -534,7 +815,21 @@ export default function ScheduleApp() {
             </Breadcrumb>
           </div>
           <div className="flex items-center gap-3">
-            <Badge variant="outline">Data contoh</Badge>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Muat ulang jadwal"
+              disabled={pending}
+              onClick={() => {
+                setPending(true);
+                void refresh()
+                  .catch((error) => toast.error(error.message))
+                  .finally(() => setPending(false));
+              }}
+            >
+              <RefreshCw className={pending ? "animate-spin" : ""} />
+            </Button>
+            <ThemeToggle />
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -556,6 +851,24 @@ export default function ScheduleApp() {
           </div>
         </header>
         <div className="mx-auto w-full max-w-[1440px] space-y-7 p-4 pb-10 sm:p-6 lg:p-8">
+          {!isAdmin && user.initialPassword && (
+            <Alert>
+              <KeyRound />
+              <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+                <span>
+                  Email Anda masih menjadi kata sandi awal. Atur kata sandi baru
+                  untuk melindungi akun.
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSection("settings")}
+                >
+                  Atur kata sandi
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
           {section === "schedules" && (
             <>
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -565,8 +878,8 @@ export default function ScheduleApp() {
                   </h1>
                   <p className="mt-2 text-sm text-muted-foreground">
                     {isAdmin
-                      ? "Atur jadwal dan pantau tugas seluruh anggota."
-                      : `Halo, ${user.name.split(" ")[0]}. Lihat jadwal dan kelola tugas Anda.`}
+                      ? "Ruang Opsi · WIB. Atur piket dan pantau tugas seluruh anggota."
+                      : "Ruang Opsi · WIB. Lihat siapa yang bertugas dan kelola status piket Anda."}
                   </p>
                 </div>
                 {isAdmin && (
@@ -576,33 +889,16 @@ export default function ScheduleApp() {
                   </Button>
                 )}
               </div>
-              <div className="flex flex-wrap gap-x-6 gap-y-2 border-y py-3 text-sm">
-                <span className="flex items-center gap-2">
-                  <CalendarDays className="size-4 text-muted-foreground" />
-                  <span className="font-medium tabular-nums">
-                    {upcoming.length}
-                  </span>
-                  <span className="text-muted-foreground">
-                    jadwal mendatang
-                  </span>
-                </span>
-                <span className="flex items-center gap-2">
-                  <CheckCheck className="size-4 text-muted-foreground" />
-                  <span className="font-medium tabular-nums">{completed}</span>
-                  <span className="text-muted-foreground">tugas selesai</span>
-                </span>
-                <span className="ml-auto hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
-                  <Clock3 className="size-3.5" />
-                  Asia/Jakarta (WIB)
-                </span>
-              </div>
               <Tabs
                 value={view}
                 onValueChange={(value) => setView(String(value))}
                 className="gap-5"
               >
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <TabsList aria-label="Tampilan jadwal">
+                  <TabsList
+                    aria-label="Tampilan jadwal"
+                    className="group-data-horizontal/tabs:h-13 md:group-data-horizontal/tabs:h-8"
+                  >
                     <TabsTrigger value="detail">
                       <List />
                       Detail
@@ -616,67 +912,77 @@ export default function ScheduleApp() {
                     {filtered.length} jadwal ditampilkan
                   </p>
                 </div>
-                <div className="flex flex-col gap-3 lg:flex-row">
-                  <div className="relative flex-1">
-                    <Search className="pointer-events-none absolute top-2 left-2.5 size-4 text-muted-foreground" />
+                <div className="flex gap-2 md:flex-col md:gap-3 xl:flex-row">
+                  <div className="relative min-w-0 flex-1">
+                    <Search className="pointer-events-none absolute top-3.5 left-2.5 size-4 text-muted-foreground md:top-2" />
                     <Input
                       aria-label="Cari jadwal"
-                      placeholder="Cari judul atau lokasi jadwal..."
-                      className="pl-9"
+                      placeholder="Cari catatan jadwal..."
+                      className="h-11 pl-9 text-base md:h-8 md:text-sm"
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
                     />
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Select
-                      items={memberOptions}
-                      value={memberFilter}
-                      onValueChange={(value) => setMemberFilter(String(value))}
+                  {isMobile ? (
+                    <Sheet
+                      open={filterSheetOpen}
+                      onOpenChange={setFilterSheetOpen}
                     >
-                      <SelectTrigger
-                        aria-label="Filter anggota"
-                        className="min-w-44"
+                      <SheetTrigger
+                        render={
+                          <Button
+                            variant="outline"
+                            className="h-11 shrink-0"
+                            aria-label="Buka filter jadwal"
+                          />
+                        }
                       >
-                        <Users />
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {memberOptions.map((item) => (
-                          <SelectItem key={item.value} value={item.value}>
-                            {item.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select
-                      items={statusOptions}
-                      value={statusFilter}
-                      onValueChange={(value) => setStatusFilter(String(value))}
-                    >
-                      <SelectTrigger
-                        aria-label="Filter status"
-                        className="min-w-36"
+                        <SlidersHorizontal />
+                        Filter
+                        {filterCount > 0 && (
+                          <Badge variant="secondary">{filterCount}</Badge>
+                        )}
+                      </SheetTrigger>
+                      <SheetContent
+                        side="bottom"
+                        className="max-h-[85svh] gap-0 overflow-y-auto rounded-t-xl [&_[data-slot=sheet-close]]:size-11"
                       >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {statusOptions.map((item) => (
-                          <SelectItem key={item.value} value={item.value}>
-                            {item.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {hasFilters && (
-                      <Button variant="ghost" onClick={resetFilters}>
-                        Reset
-                      </Button>
-                    )}
-                  </div>
+                        <SheetHeader className="border-b p-5 pr-12">
+                          <SheetTitle>Filter jadwal</SheetTitle>
+                          <SheetDescription>
+                            Atur anggota, status, dan rentang hari.
+                          </SheetDescription>
+                        </SheetHeader>
+                        <div className="p-5">{filterControls}</div>
+                        <SheetFooter className="border-t px-5 py-4">
+                          <Button
+                            className="h-11 w-full"
+                            onClick={() => setFilterSheetOpen(false)}
+                          >
+                            Lihat {filtered.length} jadwal
+                          </Button>
+                        </SheetFooter>
+                      </SheetContent>
+                    </Sheet>
+                  ) : (
+                    filterControls
+                  )}
                 </div>
+                {isMobile && (
+                  <p className="-mt-2 text-xs leading-relaxed text-muted-foreground">
+                    {scopeLabel} ·{" "}
+                    {
+                      statusOptions.find((item) => item.value === statusFilter)
+                        ?.label
+                    }{" "}
+                    ·{" "}
+                    {dayOptions.find((item) => item.value === dayRange)?.label}
+                  </p>
+                )}
                 <TabsContent value="detail">
                   {filtered.length ? (
                     <DetailedSchedules
+                      key={`${memberFilter}/${statusFilter}/${dayRange}/${search}`}
                       schedules={filtered}
                       members={data.members}
                       memberFilter={memberFilter}
@@ -684,8 +990,12 @@ export default function ScheduleApp() {
                     />
                   ) : (
                     <NoSchedules
-                      filtered={hasFilters}
-                      onReset={resetFilters}
+                      filtered={hasFilters || data.schedules.length > 0}
+                      onReset={() => {
+                        resetFilters();
+                        setMemberFilter("all");
+                        setStatusFilter("all");
+                      }}
                       onCreate={
                         isAdmin ? () => setScheduleEditor({}) : undefined
                       }
@@ -740,7 +1050,7 @@ export default function ScheduleApp() {
                 <Input
                   className="pl-9"
                   aria-label="Cari anggota"
-                  placeholder="Cari nama atau email..."
+                  placeholder="Cari nama, email, atau organisasi..."
                   value={memberSearch}
                   onChange={(event) => setMemberSearch(event.target.value)}
                 />
@@ -771,6 +1081,9 @@ export default function ScheduleApp() {
                             </Avatar>
                             <div className="min-w-0">
                               <p className="font-medium">{member.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {member.organization}
+                              </p>
                               <p className="max-w-40 truncate text-xs text-muted-foreground sm:hidden">
                                 {member.email}
                               </p>
@@ -799,7 +1112,9 @@ export default function ScheduleApp() {
                             size="sm"
                             onClick={() => {
                               setMemberFilter(member.id);
-                              setStatusFilter("all");
+                              setStatusFilter("scheduled");
+                              setDayRange("all");
+                              setView("calendar");
                               setSearch("");
                               setSection("schedules");
                             }}
@@ -815,8 +1130,8 @@ export default function ScheduleApp() {
                           colSpan={4}
                           className="py-10 text-center text-muted-foreground"
                         >
-                          Tidak ada anggota yang cocok. Coba nama atau email
-                          lain.
+                          Tidak ada anggota yang cocok. Coba nama, email, atau
+                          organisasi lain.
                         </TableCell>
                       </TableRow>
                     )}
@@ -824,7 +1139,7 @@ export default function ScheduleApp() {
                 </Table>
               </div>
               <p className="text-xs text-muted-foreground">
-                {data.members.length} anggota terdaftar dalam data contoh.
+                {data.members.length} anggota terdaftar.
               </p>
             </>
           )}
@@ -842,9 +1157,9 @@ export default function ScheduleApp() {
               <Alert>
                 <Mail />
                 <AlertDescription>
-                  Ini adalah pratinjau. Email belum dikirim. Pada aplikasi
-                  lengkap, anggota menerima email saat ditugaskan dan pengingat
-                  lagi sehari sebelum jadwal.
+                  Email penugasan dikirim pada hari anggota ditugaskan.
+                  Pengingat H−1 dikirim melalui tugas harian pukul 07.00–07.59
+                  WIB. Periksa antrean di bawah jika pengiriman tertunda.
                 </AlertDescription>
               </Alert>
               <div className="flex flex-wrap gap-x-6 gap-y-3 border-y py-4 text-sm">
@@ -929,6 +1244,98 @@ export default function ScheduleApp() {
                   </TableBody>
                 </Table>
               </div>
+              <section
+                className="space-y-4"
+                aria-label="Status pengiriman email"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold">Status pengiriman</h2>
+                  {isAdmin && (
+                    <Button
+                      variant="outline"
+                      disabled={pending}
+                      onClick={async () => {
+                        setPending(true);
+                        try {
+                          await api("emails/process", "POST", {});
+                          await refresh();
+                          toast.success("Antrean diperiksa");
+                        } catch (error) {
+                          toast.error((error as Error).message);
+                        } finally {
+                          setPending(false);
+                        }
+                      }}
+                    >
+                      {pending ? "Memproses…" : "Coba kirim antrean"}
+                    </Button>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Terkirim berarti email diterima Resend untuk diteruskan ke
+                  penerima. Batas paket gratis dapat menunda pengiriman. Email
+                  yang memerlukan pemeriksaan tidak dikirim ulang otomatis.
+                </p>
+                <div className="overflow-hidden rounded-xl border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Jenis</TableHead>
+                        <TableHead>Anggota</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {data.emails.map((job) => (
+                        <TableRow key={job.id}>
+                          <TableCell>
+                            {job.kind === "assignment"
+                              ? "Penugasan"
+                              : "Pengingat H−1"}
+                          </TableCell>
+                          <TableCell>
+                            {data.members.find(
+                              (member) => member.id === job.memberId,
+                            )?.name ?? "Anggota"}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
+                              {
+                                {
+                                  pending: "Mengantre",
+                                  sending: "Mengirim",
+                                  sent: "Terkirim ke Resend",
+                                  cancelled: "Dibatalkan",
+                                  review: "Perlu pemeriksaan",
+                                }[job.state]
+                              }
+                            </Badge>
+                            {job.errorCode && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {job.errorCode === "free_plan_quota"
+                                  ? "Batas pengiriman gratis tercapai"
+                                  : job.errorCode === "delivery_requires_review"
+                                    ? "Periksa riwayat Resend sebelum mengirim ulang"
+                                    : job.errorCode.replaceAll("_", " ")}
+                              </p>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {data.emails.length === 0 && (
+                        <TableRow>
+                          <TableCell
+                            colSpan={3}
+                            className="py-8 text-center text-muted-foreground"
+                          >
+                            Belum ada email penugasan atau pengingat.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </section>
             </>
           )}
 
@@ -970,6 +1377,12 @@ export default function ScheduleApp() {
                         </dt>
                         <dd className="mt-1 break-all">{user.email}</dd>
                       </div>
+                      {user.organization && (
+                        <div>
+                          <dt className="text-muted-foreground">Organisasi</dt>
+                          <dd className="mt-1">{user.organization}</dd>
+                        </div>
+                      )}
                       <div>
                         <dt className="text-muted-foreground">
                           Zona waktu jadwal
@@ -989,14 +1402,17 @@ export default function ScheduleApp() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <PasswordForm onSave={changePassword} />
+                    <PasswordForm
+                      key={String(user.initialPassword)}
+                      firstChange={user.initialPassword}
+                      onSave={changePassword}
+                    />
                   </CardContent>
                 </Card>
               </div>
               <p className="max-w-xl text-xs leading-relaxed text-muted-foreground">
-                Perubahan akun pada pratinjau ini hanya berlaku selama halaman
-                terbuka. Memuat ulang halaman akan mengembalikan semua data dan
-                kata sandi contoh.
+                Kata sandi disimpan sebagai hash. Mengubah kata sandi mengakhiri
+                sesi lain yang menggunakan akun Anda.
               </p>
             </>
           )}
@@ -1116,7 +1532,8 @@ export default function ScheduleApp() {
                             {member.id === user.id ? " (Anda)" : ""}
                           </p>
                           <p className="truncate text-xs text-muted-foreground">
-                            {member.email}
+                            {member.organization}
+                            {member.email ? ` · ${member.email}` : ""}
                           </p>
                         </div>
                         {!canChange && (
@@ -1135,6 +1552,7 @@ export default function ScheduleApp() {
                             items={Object.entries(statusLabels).map(
                               ([value, label]) => ({ value, label }),
                             )}
+                            disabled={pending}
                             value={assignment.status}
                             onValueChange={(value) => {
                               if (value)
@@ -1327,8 +1745,9 @@ export default function ScheduleApp() {
               <Alert>
                 <ShieldCheck />
                 <AlertDescription>
-                  Pratinjau ini tidak mengirim email. Tautan akan membuka jadwal
-                  di aplikasi.
+                  Ini adalah pratinjau isi email. Status pengiriman tersedia
+                  pada halaman Pengingat. Tautan membuka jadwal setelah anggota
+                  masuk.
                 </AlertDescription>
               </Alert>
             </div>
@@ -1346,26 +1765,19 @@ export default function ScheduleApp() {
           <AlertDialogHeader>
             <AlertDialogTitle>Hapus jadwal ini?</AlertDialogTitle>
             <AlertDialogDescription>
-              Jadwal dan seluruh status penugasannya akan dihapus dari data
-              contoh. Tindakan ini tidak dapat dibatalkan.
+              Jadwal, status penugasan, dan email yang masih mengantre akan
+              dihapus. Email yang sudah dikirim tidak dapat ditarik kembali.
+              Tindakan ini tidak dapat dibatalkan.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Batal</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              onClick={() => {
-                if (!isAdmin || !deleteId) return;
-                setData((previous) => ({
-                  ...previous,
-                  schedules: previous.schedules.filter(
-                    (schedule) => schedule.id !== deleteId,
-                  ),
-                }));
-                if (selectedId === deleteId) closeSchedule();
-                if (emailPreviewId === deleteId) setEmailPreviewId(null);
-                setDeleteId(null);
-                toast.success("Jadwal dihapus");
+              disabled={pending}
+              onClick={(event) => {
+                event.preventDefault();
+                void removeSchedule();
               }}
             >
               Hapus jadwal

@@ -48,23 +48,23 @@ Use the generated shadcn/ui base-nova preset with the neutral default theme. The
 **Key Characteristics:**
 - Neutral surfaces and default component variants.
 - Geist typography, clear grouping, and compact controls.
-- Detail-first schedules with a calendar tab.
+- Calendar-first for administrators; compact detail-first lists for members.
 
 ## Colors
 
-The normative values above come from `app/globals.css`. Keep both `:root` and `.dark` token declarations unchanged. The current app displays the default light theme. Completion uses the default primary badge, scheduled uses secondary, and skipped uses outline. Destructive controls use the library's default destructive variant.
+The normative values above come from `app/globals.css`. Keep both `:root` and `.dark` token declarations unchanged. The app follows the system theme by default. Users can select the default light or dark palette, or return to system mode; the selection persists locally. Completion uses the default primary badge, scheduled uses secondary, and skipped uses outline. Destructive controls use the library's default destructive variant.
 
 ## Typography
 
-Use the existing Geist font binding. Desktop page headings use 30px/36px semibold; mobile headings use 24px/32px. Body content is generally 14px, supporting text 12px, and times use tabular numerals. Component typography inherits the generated shadcn styles.
+Use the existing Geist font binding. Desktop page headings use 30px/36px semibold; mobile headings use 24px/32px. Body content is generally 14px, supporting text 12px, and times use tabular numerals. Desktop calendar event labels use 11px and overflow counts use 10px to fit seven date columns; full event details remain 14px in the selected-day panel. Component typography inherits the generated shadcn styles.
 
 ## Layout
 
-Use the shadcn sidebar and inset with a 64px header. Main content uses 16px padding on mobile, 24px from sm, and 32px from lg; maximum content width is 1440px. Filters wrap, detailed rows stack, and the sidebar becomes a sheet below 768px. From 1280px, calendar and selected-day details sit side by side. On smaller screens, day details follow the calendar; mobile calendar cells show schedule counts.
+Use the shadcn sidebar and inset with a 64px header. The collapsed desktop rail is 64px wide with centered buttons. Select menus open below their triggers, align to the left edge, and use inset option padding. Main content uses 16px padding on mobile, 24px from sm, and 32px from lg; maximum content width is 1440px. Below 768px, search and a Filter button share one row; a bottom sheet holds the full-width 44px scope/status/date controls, and a short summary remains visible. Desktop filters wrap. Detailed rows show date/time, assignees and organizations, and status with one detail action; lists paginate after ten schedules. Rows stack on mobile, and the sidebar becomes a sheet below 768px. From 1280px, calendar and selected-day details sit side by side. On smaller screens, day details follow the calendar; mobile calendar cells use centered dates and one dot for scheduled events, with counts retained in accessible labels and selected-day details. Mobile cells are 64px tall with a quieter grid. Today uses a filled primary date marker and a primary outline, while another selected date uses the muted background. Today follows Asia/Jakarta independently of the device time zone.
 
 ## Elevation & Depth
 
-Keep default shadcn popup, dialog, sheet, and focus treatments. Separate schedule groups with spacing and thin borders. Honor the reduced-motion override in global CSS.
+Keep default shadcn popup, dialog, sheet, and focus treatments. Use one bordered list with thin row dividers. Sidebar header and footer borders span their full width. Honor the reduced-motion override in global CSS.
 
 ## Shapes
 
@@ -72,7 +72,7 @@ Use the generated 0.625rem radius and its existing multipliers. App schedule pan
 
 ## Components
 
-Use library Sidebar, Tabs, Calendar, Dialog, Sheet, Select, Table, Alert, Avatar, Badge, Tooltip, and Button components. A schedule detail sheet exposes each assignment independently. Admin status controls are visible for everyone; member controls appear only for their own assignment. Dialogs handle member/schedule entry; an alert dialog confirms deletion. Email sheets preview assignment and H−1 messages. See `.impeccable/surfaces/schedule.md` for surface behavior.
+Use library Sidebar, Tabs, Calendar, Dialog, Sheet, Select, Table, Alert, Avatar, Badge, Tooltip, and Button components. A schedule detail sheet exposes each assignment independently. Admin status controls are visible for everyone; member controls appear only for their own assignment. Dialogs handle member/schedule entry; an alert dialog confirms deletion. Email sheets preview assignment and H−1 messages. Member creation requires BEM/BPM/LPM; schedule creation fixes the place to Ruang Opsi and filters assignees by organization without losing hidden selections. Date ranges and status filters apply to both schedule views. See `.impeccable/surfaces/schedule.md` for surface behavior.
 
 ## Do's and Don'ts
 
