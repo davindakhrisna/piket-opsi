@@ -10,6 +10,7 @@
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "db:migrate": "node --experimental-strip-types scripts/migrate.mjs",
     "test:e2e": "playwright test",
+    "test:email": "node scripts/test-email.mjs",
     "test:live": "node --experimental-strip-types scripts/live-smoke.mjs"
   },
   "dependencies": {

@@ -68,11 +68,13 @@ Keep default shadcn popup, dialog, sheet, and focus treatments. Use one bordered
 
 ## Shapes
 
-Use the generated 0.625rem radius and its existing multipliers. App schedule panels use rounded-xl; controls retain their default component rounding. Avatars and badges keep their library shapes.
+Use the generated 0.625rem radius and its existing multipliers. App schedule panels use rounded-xl; controls retain their default component rounding. Avatars and badges keep their library shapes. The favicon repeats the existing CalendarDays motif on a neutral rounded square.
 
 ## Components
 
-Use library Sidebar, Tabs, Calendar, Dialog, Sheet, Select, Table, Alert, Avatar, Badge, Tooltip, and Button components. A schedule detail sheet exposes each assignment independently. Admin status controls are visible for everyone; member controls appear only for their own assignment. Dialogs handle member/schedule entry; an alert dialog confirms deletion. Email sheets preview assignment and H−1 messages. Member creation requires BEM/BPM/LPM; schedule creation fixes the place to Ruang Opsi and filters assignees by organization without losing hidden selections. Date ranges and status filters apply to both schedule views. See `.impeccable/surfaces/schedule.md` for surface behavior.
+Use library Sidebar, Tabs, Calendar, Dialog, Sheet, Select, Table, Alert, Avatar, Badge, Tooltip, Button, and Spinner components. A schedule detail sheet exposes each assignment independently. Admin status controls are visible for everyone; member controls appear only for their own assignment. Dialogs handle member/schedule entry; an alert dialog confirms deletion. Email sheets preview assignment and H−1 messages. Member creation selects a saved organization. The admin Organisasi dialog on Anggota lists saved names, marks protected BEM/BPM/LPM options with Bawaan badges, and allows adding organizations or editing/deleting custom organizations. Editing reuses the entry form; the official shadcn AlertDialog confirms deletion, which is disabled for organizations with members. Schedule creation fixes the place to Ruang Opsi and filters assignees by saved organizations without losing hidden selections. Initial loading centers the official shadcn Spinner with the accessible label `Memuat aplikasi`; connection failures retain the retry card. Date ranges and status filters apply to both schedule views. See `.impeccable/surfaces/schedule.md` for surface behavior.
+
+On Pengingat, an admin-only default shadcn Card groups the daily WIB time choice and Simpan waktu above the pending assignment count and Kirim semua, before reminder summaries and rows. Controls stack on mobile. Detail sheets place outline Belum diberi tahu or secondary Diberi tahu badges beside member information, separate from Status tugas controls.
 
 ## Do's and Don'ts
 

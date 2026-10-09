@@ -5,7 +5,7 @@ import {
   dateFromKey,
   dateKey,
   filterSchedules,
-  organizations,
+  initialOrganizations,
   SCHEDULE_LOCATION,
   SCHEDULE_TITLE,
   shiftDate,
@@ -66,7 +66,7 @@ test("sample assignments reference existing members and expose all three states"
   const statuses = new Set();
   assert.deepEqual(
     [...new Set(members.map((member) => member.organization))].sort(),
-    [...organizations].sort(),
+    [...initialOrganizations].sort(),
   );
   for (const schedule of schedules) {
     assert.equal(schedule.title, SCHEDULE_TITLE);

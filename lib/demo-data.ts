@@ -1,5 +1,6 @@
 export * from "./domain.ts";
 import {
+  initialOrganizations,
   jakartaToday,
   shiftDate,
   SCHEDULE_TITLE,
@@ -103,5 +104,5 @@ export function createDemoData() {
           : "scheduled",
     })),
   }));
-  return { members, schedules };
+  return { members, schedules, organizations: [...initialOrganizations] };
 }

@@ -22,7 +22,7 @@ export async function queueEmails(
   kind: "assignment" | "reminder",
 ) {
   const result = await client.query(
-    "SELECT s.id, s.date::text, s.notes, s.mail_version, u.id AS member_id, u.name, u.email FROM schedules s JOIN assignments a ON a.schedule_id = s.id JOIN users u ON u.id = a.member_id WHERE s.id = $1 AND a.status = 'scheduled' AND s.date >= (now() AT TIME ZONE 'Asia/Jakarta')::date AND ($2 = 'assignment' OR s.date = (now() AT TIME ZONE 'Asia/Jakarta')::date + 1)",
+    "SELECT s.id, s.date::text, s.notes, s.mail_version, u.id AS member_id, u.name, u.email, u.version FROM schedules s JOIN assignments a ON a.schedule_id = s.id JOIN users u ON u.id = a.member_id WHERE s.id = $1 AND u.deleted_at IS NULL AND a.status = 'scheduled' AND s.date >= (now() AT TIME ZONE 'Asia/Jakarta')::date AND ($2 = 'assignment' OR s.date = (now() AT TIME ZONE 'Asia/Jakarta')::date + 1) AND ($2 <> 'assignment' OR NOT EXISTS (SELECT 1 FROM email_jobs e WHERE e.schedule_id = s.id AND e.member_id = a.member_id AND e.kind = 'assignment' AND (e.state = 'sent' OR (e.uncertain_since IS NOT NULL AND e.job_key <> 'assignment/' || s.id || '/' || s.mail_version || '/' || u.id || CASE WHEN u.version > 1 THEN '/member/' || u.version ELSE '' END))))",
     [scheduleId, kind],
   );
   if (!result.rowCount) return;
@@ -34,7 +34,7 @@ export async function queueEmails(
   const origin = appOrigin();
   for (const row of result.rows) {
     const link = `${origin}/?jadwal=${row.id}`;
-    const text = `Halo ${row.name},\n\n${kind === "assignment" ? "Admin menugaskan Anda untuk piket di Ruang Opsi." : "Pengingat: besok Anda bertugas piket di Ruang Opsi."}\n\nTanggal: ${row.date}\nLokasi: Ruang Opsi\n${row.notes ? `Catatan: ${row.notes}\n` : ""}\nBuka jadwal: ${link}\n\nSetelah bertugas, tandai tugas Anda sebagai selesai di aplikasi.\nJika masih menggunakan kata sandi awal, ubah melalui Pengaturan.\n\nPiket Opsi · Asia/Jakarta`;
+    const text = `Halo ${row.name},\n\n${kind === "assignment" ? "Anda telah ditugaskan untuk piket di Ruang Opsi." : "Pengingat: besok Anda bertugas piket di Ruang Opsi."}\n\nTanggal: ${row.date}\nLokasi: Ruang Opsi\n${row.notes ? `Catatan: ${row.notes}\n` : ""}\nBuka jadwal: ${link}\n\nSetelah bertugas, tandai tugas Anda sebagai selesai di aplikasi.\nJika masih menggunakan kata sandi awal, ubah melalui Pengaturan.\n\nPiket Opsi · Asia/Jakarta`;
     const payload = {
       from: process.env.RESEND_FROM,
       to: [row.email],
@@ -44,10 +44,10 @@ export async function queueEmails(
       headers: { "X-Priority": "1", Importance: "high" },
     };
     await client.query(
-      "INSERT INTO email_jobs(id, job_key, schedule_id, member_id, mail_version, kind, payload) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (job_key) DO UPDATE SET state = 'pending', next_attempt_at = now(), error_code = NULL WHERE email_jobs.state = 'cancelled' AND email_jobs.error_code = 'assignment_inactive' AND (email_jobs.uncertain_since IS NULL OR email_jobs.uncertain_since > now() - interval '23 hours') AND email_jobs.provider_id IS NULL",
+      "INSERT INTO email_jobs(id, job_key, schedule_id, member_id, mail_version, kind, payload, state) VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $6 = 'assignment' THEN 'waiting' ELSE 'pending' END) ON CONFLICT (job_key) DO UPDATE SET state = CASE WHEN EXCLUDED.kind = 'assignment' THEN 'waiting' ELSE 'pending' END, next_attempt_at = now(), error_code = NULL WHERE email_jobs.state = 'cancelled' AND email_jobs.error_code = 'assignment_inactive' AND (email_jobs.uncertain_since IS NULL OR email_jobs.uncertain_since > now() - interval '23 hours') AND email_jobs.provider_id IS NULL",
       [
         randomUUID(),
-        `${kind}/${row.id}/${row.mail_version}/${row.member_id}`,
+        `${kind}/${row.id}/${row.mail_version}/${row.member_id}${row.version > 1 ? `/member/${row.version}` : ""}`,
         row.id,
         row.member_id,
         row.mail_version,
@@ -55,6 +55,41 @@ export async function queueEmails(
         JSON.stringify(payload),
       ],
     );
+  }
+}
+
+export async function releaseAssignmentEmails(slot?: number, actorId?: string, scheduleId?: string) {
+  const client = await database().connect();
+  try {
+    await client.query("BEGIN");
+    const settings = (
+      await client.query(
+        "SELECT daily_hour, extract(hour FROM now() AT TIME ZONE 'Asia/Jakarta')::int AS hour FROM notification_settings FOR UPDATE",
+      )
+    ).rows[0];
+    let released = 0;
+    if (
+      slot === undefined ||
+      (settings.daily_hour === slot && settings.hour === slot)
+    ) {
+      const result = await client.query(
+        "UPDATE email_jobs e SET state = 'pending', next_attempt_at = now() WHERE e.kind = 'assignment' AND e.state = 'waiting' AND ($1::uuid IS NULL OR e.schedule_id = $1) AND EXISTS (SELECT 1 FROM schedules s JOIN assignments a ON a.schedule_id = s.id AND a.member_id = e.member_id JOIN users u ON u.id = a.member_id WHERE s.id = e.schedule_id AND u.deleted_at IS NULL AND s.mail_version = e.mail_version AND a.status = 'scheduled' AND s.date >= (now() AT TIME ZONE 'Asia/Jakarta')::date) AND NOT EXISTS (SELECT 1 FROM email_jobs sent WHERE sent.schedule_id = e.schedule_id AND sent.member_id = e.member_id AND sent.kind = 'assignment' AND sent.state = 'sent')",
+        [scheduleId ?? null],
+      );
+      released = result.rowCount ?? 0;
+      if (actorId)
+        await client.query(
+          "INSERT INTO audit_events(actor_id, action, target_id, details) VALUES ($1, 'notifications.send_requested', 'queue', $2)",
+          [actorId, JSON.stringify({ released })],
+        );
+    }
+    await client.query("COMMIT");
+    return { released, hour: settings.hour as number };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
@@ -107,19 +142,19 @@ export async function processEmailJobs() {
       const result = await client.query(
         "SELECT * FROM email_jobs WHERE state IN ('pending', 'sending') AND next_attempt_at <= now() ORDER BY CASE WHEN kind = 'assignment' THEN 0 ELSE 1 END, created_at, id LIMIT 1",
       );
-      const job = result.rows[0];
+      let job = result.rows[0];
       if (!job) {
         await client.query("COMMIT");
         inTransaction = false;
         break;
       }
       const schedule = await client.query(
-        "SELECT s.mail_version, a.status, s.date >= (now() AT TIME ZONE 'Asia/Jakarta')::date AS not_past, s.date = (now() AT TIME ZONE 'Asia/Jakarta')::date + 1 AS tomorrow FROM schedules s JOIN assignments a ON a.schedule_id = s.id AND a.member_id = $2 WHERE s.id = $1 FOR UPDATE OF s",
+        "SELECT s.mail_version, a.status, u.deleted_at IS NULL AS member_active, s.date >= (now() AT TIME ZONE 'Asia/Jakarta')::date AS not_past, s.date = (now() AT TIME ZONE 'Asia/Jakarta')::date + 1 AS tomorrow, EXISTS (SELECT 1 FROM email_jobs e WHERE e.schedule_id = s.id AND e.member_id = a.member_id AND e.kind = 'assignment' AND e.state = 'sent') AS notified FROM schedules s JOIN assignments a ON a.schedule_id = s.id AND a.member_id = $2 JOIN users u ON u.id = a.member_id WHERE s.id = $1 FOR UPDATE OF s",
         [job.schedule_id, job.member_id],
       );
       const row = schedule.rows[0];
       const current = await client.query(
-        "SELECT state FROM email_jobs WHERE id = $1 FOR UPDATE",
+        "SELECT * FROM email_jobs WHERE id = $1 FOR UPDATE",
         [job.id],
       );
       if (!["pending", "sending"].includes(current.rows[0]?.state)) {
@@ -127,8 +162,10 @@ export async function processEmailJobs() {
         inTransaction = false;
         continue;
       }
+      job = current.rows[0];
       if (
         !row ||
+        !row.member_active ||
         row.mail_version !== job.mail_version ||
         row.status !== "scheduled" ||
         !row.not_past ||
@@ -136,6 +173,16 @@ export async function processEmailJobs() {
       ) {
         await client.query(
           "UPDATE email_jobs SET state = 'cancelled', error_code = 'assignment_inactive_or_expired' WHERE id = $1",
+          [job.id],
+        );
+        await client.query("COMMIT");
+        inTransaction = false;
+        stats.cancelled++;
+        continue;
+      }
+      if (job.kind === "assignment" && row.notified) {
+        await client.query(
+          "UPDATE email_jobs SET state = 'cancelled', error_code = 'assignment_already_notified' WHERE id = $1",
           [job.id],
         );
         await client.query("COMMIT");

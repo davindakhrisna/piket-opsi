@@ -1,11 +1,20 @@
 export type AssignmentStatus = "scheduled" | "done" | "skipped";
-export const organizations = ["BEM", "BPM", "LPM"] as const;
-export type Organization = (typeof organizations)[number];
+export type NotificationStatus = "assigned" | "notified";
+export type NotificationSettings = { dailyHour: number | null; version: number };
+export function notificationWindowLabel(hour: number | null) {
+  if (hour === null) return "Manual saja";
+  const label = String(hour).padStart(2, "0");
+  return `${label}.00–${label}.59 WIB`;
+}
+export const initialOrganizations = ["BEM", "BPM", "LPM"];
+export type Organization = string;
 export type Member = {
   id: string;
   name: string;
   email: string;
   organization: Organization;
+  version?: number;
+  deleted?: boolean;
 };
 export type DayRange = "all" | "3" | "7" | "14" | "30";
 export type SessionUser = Omit<Member, "organization"> & {
@@ -18,19 +27,25 @@ export type EmailJob = {
   scheduleId: string;
   memberId: string;
   kind: "assignment" | "reminder";
-  state: "pending" | "sending" | "sent" | "cancelled" | "review";
+  state: "waiting" | "pending" | "sending" | "sent" | "cancelled" | "review";
   errorCode: string | null;
   sentAt: string | null;
 };
 export type AppSnapshot = {
   user: SessionUser;
+  organizations: Organization[];
   members: Member[];
   schedules: Schedule[];
   emails: EmailJob[];
+  notificationSettings: NotificationSettings;
 };
 export const SCHEDULE_TITLE = "Piket Ruang Opsi";
 export const SCHEDULE_LOCATION = "Ruang Opsi";
-export type Assignment = { memberId: string; status: AssignmentStatus };
+export type Assignment = {
+  memberId: string;
+  status: AssignmentStatus;
+  notificationStatus?: NotificationStatus;
+};
 export type Schedule = {
   id: string;
   version?: number;

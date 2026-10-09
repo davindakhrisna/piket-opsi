@@ -105,6 +105,10 @@ try {
     },
   });
   if (!assignment.ok()) throw new Error("Live schedule creation failed.");
+  // Release only this isolated smoke-test assignment, never the global Send All queue.
+  await db.query("UPDATE email_jobs SET state = 'pending', next_attempt_at = now() WHERE schedule_id = $1 AND member_id = $2 AND kind = 'assignment' AND state = 'waiting'", [scheduleId, memberId]);
+  if (!(await api.post("/api/emails/process", { data: {} })).ok())
+    throw new Error("Live manual email dispatch failed.");
   let jobs = [];
   for (let attempt = 0; attempt < 60; attempt++) {
     jobs = (

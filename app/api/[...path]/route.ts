@@ -2,21 +2,28 @@ import { timingSafeEqual } from "node:crypto";
 import { after, NextRequest, NextResponse } from "next/server";
 import {
   addMember,
+  updateMember,
+  deleteMember,
+  addOrganization,
   authenticate,
   changePassword,
+  deleteOrganization,
   deleteSchedule,
   login,
   logout,
   requireAccess,
   saveSchedule,
   snapshot,
+  updateOrganization,
+  updateNotificationSettings,
 } from "@/lib/server/app-service";
 import { retryDefiniteFailures, updateStatus } from "@/lib/server/app-service";
-import { AppError } from "@/lib/server/security";
+import { AppError, requireId } from "@/lib/server/security";
 import {
   appOrigin,
   processEmailJobs,
   queueTomorrowReminders,
+  releaseAssignmentEmails,
 } from "@/lib/server/mail";
 
 export const runtime = "nodejs";
@@ -92,7 +99,8 @@ async function handle(request: NextRequest) {
         403,
         "Asal permintaan tidak diizinkan. Buka aplikasi dari alamat resminya.",
       );
-    if (path === "cron/reminders" && request.method === "GET") {
+    const notificationCron = path.match(/^cron\/notifications\/(0\d|1\d|2[0-3])$/);
+    if ((path === "cron/reminders" || notificationCron) && request.method === "GET") {
       const secret = process.env.CRON_SECRET;
       const provided = request.headers.get("authorization") ?? "";
       const expected = secret ? `Bearer ${secret}` : "";
@@ -105,7 +113,11 @@ async function handle(request: NextRequest) {
         !timingSafeEqual(providedBytes, expectedBytes)
       )
         throw new AppError(401, "Tidak diizinkan.");
-      await queueTomorrowReminders();
+      if (notificationCron) {
+        const result = await releaseAssignmentEmails(Number(notificationCron[1]));
+        // Catch up today's H−1 queue if the primary 07:00 WIB invocation was missed.
+        if (result.hour >= 7) await queueTomorrowReminders();
+      } else await queueTomorrowReminders();
       return json(await processEmailJobs());
     }
     if (path === "auth/login" && request.method === "POST") {
@@ -126,13 +138,37 @@ async function handle(request: NextRequest) {
     if (path === "auth/password" && request.method === "POST") {
       const input = await body(request);
       return withSession(
-        await changePassword(auth, input.currentPassword, input.newPassword),
+        await changePassword(auth, input.newPassword),
       );
     }
     if (path === "snapshot" && request.method === "GET")
       return json(await snapshot(auth));
+    if (path === "notification-settings" && request.method === "PUT")
+      return json(await updateNotificationSettings(auth, await body(request)));
+    if (path === "notifications/send" && request.method === "POST") {
+      requireAccess(auth, true);
+      const input = await body(request);
+      if (input.scheduleId !== undefined) requireId(input.scheduleId);
+      const { released } = await releaseAssignmentEmails(undefined, auth.user.id, input.scheduleId as string | undefined);
+      return json({ released, ...await processEmailJobs() });
+    }
+    if (path === "organizations" && request.method === "POST") {
+      const result = await addOrganization(auth, await body(request));
+      return json(result, result.created ? 201 : 200);
+    }
+    if (path === "organizations" && request.method === "PUT")
+      return json(await updateOrganization(auth, await body(request)));
+    if (path === "organizations" && request.method === "DELETE")
+      return json(await deleteOrganization(auth, await body(request)));
     if (path === "members" && request.method === "POST")
       return json(await addMember(auth, await body(request)), 201);
+    const memberPath = path.match(/^members\/([^/]+)$/);
+    if (memberPath && request.method === "PUT")
+      return json(await updateMember(auth, memberPath[1], await body(request)));
+    if (memberPath && request.method === "DELETE") {
+      const input = await body(request);
+      return json(await deleteMember(auth, memberPath[1], input.version));
+    }
     if (path === "schedules" && request.method === "POST") {
       const result = await saveSchedule(auth, await body(request));
       deliverSoon();

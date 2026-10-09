@@ -85,6 +85,15 @@ async function navigate(page: Page, label: string) {
     await page.getByRole("button", { name: "Buka atau tutup menu" }).click();
   await button.click();
 }
+async function settleAnimations(page: Page) {
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await Promise.all(document.getAnimations()
+      .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+      .map((animation) => animation.finished.catch(() => {})));
+  });
+}
 async function captures(request: APIRequestContext) {
   return (await (
     await request.get("http://127.0.0.1:3419/messages")
@@ -115,8 +124,10 @@ test.beforeEach(async ({ request }) => {
   const client = await db.connect();
   try {
     await client.query(
-      "TRUNCATE audit_events, email_jobs, email_budget, worker_leases, assignments, schedules, sessions, login_limits, users RESTART IDENTITY CASCADE",
+      "TRUNCATE audit_events, email_jobs, email_budget, worker_leases, assignments, schedules, sessions, login_limits, users, organizations, notification_settings RESTART IDENTITY CASCADE",
     );
+    await client.query("INSERT INTO organizations(name) VALUES ('BEM'), ('BPM'), ('LPM')");
+    await client.query("INSERT INTO notification_settings(daily_hour) VALUES (7)");
     await client.query(
       "INSERT INTO users(id, name, email, role, password_hash) VALUES ('admin', 'Admin', 'admin', 'admin', $1)",
       [await hashPassword("admin")],
@@ -130,7 +141,325 @@ test.afterAll(async () => {
   await db.end();
 });
 
-test("admin onboarding, organization-based assignment, immediate email, and persistence", async ({
+test("admin adds organizations that persist in member forms and assignment filters", async ({ page, request }) => {
+  expect((await send(request, "organizations", "POST", { name: "HIMATI" })).status()).toBe(401);
+  await send(request, "auth/login", "POST", { email: "admin", password: "admin" });
+  expect((await send(request, "organizations", "POST", { name: "HIMATI" })).status()).toBe(403);
+  await admin(page.context().request);
+  await page.goto("/");
+  await navigate(page, "Anggota");
+  await page.getByRole("button", { name: "Organisasi", exact: true }).click();
+  const organizations = page.getByRole("dialog", { name: "Organisasi", exact: true });
+  for (const name of ["BEM", "BPM", "LPM"])
+    await expect(organizations.getByText(name, { exact: true })).toBeVisible();
+  await organizations.getByLabel("Nama organisasi", { exact: true }).fill(" HIMATI ");
+  await organizations.getByRole("button", { name: "Tambah organisasi", exact: true }).click();
+  await expect(organizations.getByText("HIMATI", { exact: true })).toBeVisible();
+  await organizations.getByLabel("Nama organisasi", { exact: true }).fill("himati");
+  await organizations.getByRole("button", { name: "Tambah organisasi", exact: true }).click();
+  await expect(organizations.getByRole("alert")).toContainText("sudah terdaftar");
+  await organizations.getByLabel("Nama organisasi", { exact: true }).fill("");
+  await page.screenshot({ path: `.impeccable/review/organizations-${test.info().project.name}.png`, fullPage: true });
+  await organizations.getByRole("button", { name: "Tutup", exact: true }).click();
+
+  const duplicate = await send(page.context().request, "organizations", "POST", { name: "hiMAti" });
+  expect(duplicate.status()).toBe(200);
+  expect(await duplicate.json()).toEqual({ name: "HIMATI", created: false });
+  const concurrent = await Promise.all(["UKM", "ukm"].map((name) =>
+    send(page.context().request, "organizations", "POST", { name })));
+  expect(concurrent.map((response) => response.status()).sort()).toEqual([200, 201]);
+  for (const name of [" ", "X".repeat(81), "BAD\nORG"])
+    expect((await send(page.context().request, "organizations", "POST", { name })).status()).toBe(400);
+  expect((await db.query("SELECT count(*)::int AS count FROM organizations WHERE lower(name) = 'himati'")).rows[0].count).toBe(1);
+  expect((await db.query("SELECT count(*)::int AS count FROM audit_events WHERE action = 'organization.created' AND target_id = 'HIMATI'")).rows[0].count).toBe(1);
+  expect((await send(page.context().request, "members", "POST", {
+    requestId: randomUUID(), name: "Invalid", email: "invalid@example.com", organization: "Missing organization",
+  })).status()).toBe(400);
+
+  await page.getByRole("button", { name: "Tambah anggota", exact: true }).click();
+  const memberDialog = page.getByRole("dialog", { name: "Tambah anggota", exact: true });
+  await memberDialog.getByLabel("Nama lengkap", { exact: true }).fill("Arpeggio");
+  await memberDialog.getByLabel("Email", { exact: true }).fill(recipient);
+  await memberDialog.getByRole("combobox", { name: "Organisasi", exact: true }).click();
+  await page.getByRole("option", { name: "HIMATI", exact: true }).click();
+  await memberDialog.getByRole("button", { name: "Tambah anggota", exact: true }).click();
+  await expect(memberDialog).toHaveCount(0);
+  await member(page.context().request, "bem@example.com", "Anggota BEM");
+  expect((await send(page.context().request, "organizations", "POST", { name: "all" })).status()).toBe(201);
+  await member(page.context().request, "all@example.com", "Anggota all", "all");
+  await page.reload();
+  await navigate(page, "Jadwal");
+  await page.getByRole("button", { name: "Buat jadwal", exact: true }).first().click();
+  const editor = page.getByRole("dialog", { name: "Buat jadwal", exact: true });
+  const filter = editor.getByRole("combobox", { name: "Filter organisasi penugasan" });
+  await filter.click();
+  await page.getByRole("option", { name: "HIMATI", exact: true }).click();
+  await expect(editor.getByRole("checkbox")).toHaveCount(1);
+  await editor.getByRole("checkbox").check();
+  await filter.click();
+  await page.getByRole("option", { name: "all", exact: true }).click();
+  await expect(editor.getByRole("checkbox")).toHaveCount(1);
+  await expect(editor.getByText(/Pilihan tetap tersimpan/)).toBeVisible();
+  await editor.getByRole("checkbox").check();
+  await filter.click();
+  await page.getByRole("option", { name: "Semua organisasi", exact: true }).click();
+  await expect(editor.getByRole("checkbox")).toHaveCount(3);
+  await expect(editor.getByRole("checkbox", { checked: true })).toHaveCount(2);
+  await page.screenshot({ path: `.impeccable/review/organization-assignment-${test.info().project.name}.png`, fullPage: true });
+  await editor.getByRole("button", { name: "Buat jadwal", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  expect((await schedules(page.context().request))[0].assignments).toHaveLength(2);
+  await page.reload();
+  await navigate(page, "Anggota");
+  await expect(page.getByRole("cell", { name: /Arpeggio HIMATI/ }).first()).toBeVisible();
+  const snapshot = await (await page.context().request.get("/api/snapshot")).json();
+  expect(snapshot.organizations).toEqual(expect.arrayContaining(["BEM", "BPM", "LPM", "HIMATI", "all"]));
+
+  await send(page.context().request, "auth/logout");
+  await signIn(page, recipient, recipient);
+  await expect(page.getByRole("heading", { name: "Jadwal piket", exact: true })).toBeVisible();
+  expect((await send(page.context().request, "organizations", "POST", { name: "Forbidden" })).status()).toBe(403);
+  await expect(page.getByRole("button", { name: "Organisasi", exact: true })).toHaveCount(0);
+});
+
+test("organization update and delete preserve members and protect provisioned defaults", async ({ page, request }) => {
+  for (const method of ["PUT", "DELETE"])
+    expect((await send(request, "organizations", method, { name: "BEM", newName: "Changed" })).status()).toBe(401);
+  await send(request, "auth/login", "POST", { email: "admin", password: "admin" });
+  for (const method of ["PUT", "DELETE"])
+    expect((await send(request, "organizations", method, { name: "BEM", newName: "Changed" })).status()).toBe(403);
+  const api = page.context().request;
+  await admin(api);
+  for (const name of ["BEM", "BPM", "LPM"])
+    for (const method of ["PUT", "DELETE"])
+      expect((await send(api, "organizations", method, { name, newName: "Changed" })).status()).toBe(403);
+  expect((await send(api, "organizations", "POST", { name: "HIMATI" })).status()).toBe(201);
+  expect((await send(api, "organizations", "POST", { name: "Sementara" })).status()).toBe(201);
+  const id = await member(api, recipient, "Arpeggio", "HIMATI");
+  expect((await send(api, "schedules", "POST", schedule(id))).status()).toBe(201);
+  const before = (await db.query("SELECT id, name, email, organization, password_hash FROM users WHERE id = $1", [id])).rows[0];
+  const beforeSchedules = await schedules(api);
+
+  await page.goto("/");
+  await navigate(page, "Anggota");
+  await page.getByRole("button", { name: "Organisasi", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Organisasi", exact: true });
+  await expect(dialog.getByText("Bawaan", { exact: true })).toHaveCount(3);
+  for (const name of ["BEM", "BPM", "LPM"]) {
+    await expect(dialog.getByRole("button", { name: `Ubah ${name}`, exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: `Hapus ${name}`, exact: true })).toHaveCount(0);
+  }
+  await dialog.getByRole("button", { name: "Ubah HIMATI", exact: true }).click();
+  await dialog.getByLabel("Nama organisasi", { exact: true }).fill("BEM");
+  await dialog.getByRole("button", { name: "Simpan perubahan", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("sudah terdaftar");
+  await dialog.getByLabel("Nama organisasi", { exact: true }).fill(" Himpunan Teknologi ");
+  await dialog.getByRole("button", { name: "Simpan perubahan", exact: true }).click();
+  await expect(dialog.getByText("Himpunan Teknologi", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("HIMATI", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Hapus Himpunan Teknologi", exact: true })).toBeDisabled();
+  const after = (await db.query("SELECT id, name, email, organization, password_hash FROM users WHERE id = $1", [id])).rows[0];
+  expect(after).toEqual({ ...before, organization: "Himpunan Teknologi" });
+  expect(await schedules(api)).toEqual(beforeSchedules);
+  expect((await send(api, "organizations", "DELETE", { name: "Himpunan Teknologi" })).status()).toBe(409);
+  expect((await send(api, "organizations", "PUT", { name: "Himpunan Teknologi", newName: "bem" })).status()).toBe(409);
+  for (const newName of [" ", "X".repeat(81), "BAD\nORG"])
+    expect((await send(api, "organizations", "PUT", { name: "Himpunan Teknologi", newName })).status()).toBe(400);
+  for (const method of ["PUT", "DELETE"])
+    expect((await send(api, "organizations", method, { name: "Missing", newName: "New" })).status()).toBe(409);
+
+  await dialog.getByRole("button", { name: "Ubah Sementara", exact: true }).click();
+  await dialog.getByLabel("Nama organisasi", { exact: true }).fill("Batal disimpan");
+  await dialog.getByRole("button", { name: "Batal ubah", exact: true }).click();
+  await expect(dialog.getByText("Sementara", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Hapus Sementara", exact: true }).click();
+  const confirmation = page.getByRole("alertdialog", { name: "Hapus organisasi?" });
+  await confirmation.getByRole("button", { name: "Batal", exact: true }).click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(dialog.getByText("Sementara", { exact: true })).toBeVisible();
+  await settleAnimations(page);
+  await page.screenshot({ path: `.impeccable/review/organization-crud-${test.info().project.name}.png`, fullPage: true });
+  await dialog.getByRole("button", { name: "Hapus Sementara", exact: true }).click();
+  await settleAnimations(page);
+  await expect(confirmation).toHaveCSS("opacity", "1");
+  await page.screenshot({ path: `.impeccable/review/organization-delete-${test.info().project.name}.png`, fullPage: true });
+  await confirmation.getByRole("button", { name: "Hapus organisasi", exact: true }).click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(dialog.getByText("Sementara", { exact: true })).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Tutup", exact: true }).click();
+  await page.reload();
+  await navigate(page, "Anggota");
+  await expect(page.getByRole("cell", { name: /Arpeggio Himpunan Teknologi/ }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Tambah anggota", exact: true }).click();
+  await page.getByRole("dialog", { name: "Tambah anggota", exact: true }).getByRole("combobox", { name: "Organisasi", exact: true }).click();
+  await expect(page.getByRole("option", { name: "Himpunan Teknologi", exact: true })).toBeVisible();
+  await expect(page.getByRole("option", { name: "HIMATI", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("option", { name: "Sementara", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+
+  await send(api, "organizations", "POST", { name: "RACE" });
+  const renamed = await Promise.all(["RACE A", "RACE B"].map((newName) => send(api, "organizations", "PUT", { name: "RACE", newName })));
+  expect(renamed.map((response) => response.status()).sort()).toEqual([200, 409]);
+  await send(api, "organizations", "POST", { name: "Empty" });
+  const contested = await Promise.all([
+    send(api, "organizations", "DELETE", { name: "Empty" }),
+    send(api, "members", "POST", { requestId: randomUUID(), name: "Race member", email: "race@example.com", organization: "Empty" }),
+  ]);
+  expect([[200, 400], [409, 201]]).toContainEqual(contested.map((response) => response.status()));
+  expect((await db.query("SELECT count(*)::int AS count FROM users u LEFT JOIN organizations o ON o.name = u.organization WHERE u.role = 'member' AND o.name IS NULL")).rows[0].count).toBe(0);
+  expect((await db.query("SELECT action FROM audit_events WHERE action IN ('organization.updated', 'organization.deleted') ORDER BY action")).rows.map((row) => row.action)).toEqual(expect.arrayContaining(["organization.updated", "organization.deleted"]));
+  await send(api, "auth/logout");
+  await signIn(page, recipient, recipient);
+  await expect(page.getByRole("heading", { name: "Jadwal piket", exact: true })).toBeVisible();
+  for (const method of ["PUT", "DELETE"])
+    expect((await send(api, "organizations", method, { name: "Himpunan Teknologi", newName: "Forbidden" })).status()).toBe(403);
+});
+
+test("admin configures daily notification time and manually notifies each assignment once", async ({ page, request }) => {
+  expect((await send(request, "notifications/send")).status()).toBe(401);
+  await send(request, "auth/login", "POST", { email: "admin", password: "admin" });
+  expect((await send(request, "notifications/send")).status()).toBe(403);
+  expect((await send(request, "notification-settings", "PUT", { dailyHour: 8, version: 1 })).status()).toBe(403);
+  const api = page.context().request;
+  await admin(api);
+  const firstId = await member(api);
+  const value = schedule(firstId, 5);
+  expect((await send(api, "schedules", "POST", value)).status()).toBe(201);
+  expect(await captures(request)).toHaveLength(0);
+  expect((await schedules(api))[0].assignments[0].notificationStatus).toBe("assigned");
+  expect((await send(api, "emails/process")).status()).toBe(200);
+  expect(await captures(request)).toHaveLength(0);
+  await page.goto("/");
+  await navigate(page, "Pengingat");
+  const controls = page.locator('[data-slot="card"]').filter({ has: page.getByText("Notifikasi penugasan", { exact: true }) });
+  const selector = controls.getByRole("combobox", { name: "Pengiriman otomatis (WIB)" });
+  await expect(selector).toContainText("07.00–07.59 WIB");
+  await selector.click();
+  await page.getByRole("option", { name: "Manual saja", exact: true }).click();
+  await controls.getByRole("button", { name: "Simpan waktu", exact: true }).click();
+  await expect(page.getByText("Waktu pengiriman tersimpan", { exact: true })).toBeVisible();
+  await page.reload();
+  await navigate(page, "Pengingat");
+  await expect(selector).toContainText("Manual saja");
+  await expect(controls.getByText("1 penugasan belum diberi tahu", { exact: true })).toBeVisible();
+  await settleAnimations(page);
+  await page.screenshot({ path: `.impeccable/review/notifications-assigned-${test.info().project.name}.png`, fullPage: true });
+  await controls.getByRole("button", { name: "Kirim semua", exact: true }).click();
+  await expect(controls.getByText("0 penugasan belum diberi tahu", { exact: true })).toBeVisible();
+  expect(await captures(request)).toHaveLength(1);
+  const notified = (await schedules(api))[0];
+  expect(notified.assignments[0]).toMatchObject({ memberId: firstId, status: "scheduled", notificationStatus: "notified" });
+  expect((await send(api, "notifications/send")).status()).toBe(200);
+  expect(await captures(request)).toHaveLength(1);
+  const secondId = await member(api, "second@example.com", "Second", "BPM");
+  expect((await send(api, `schedules/${value.requestId}`, "PUT", {
+    date: notified.date, notes: "Updated assignment", version: notified.version,
+    assignments: [{ memberId: firstId }, { memberId: secondId }],
+  })).status()).toBe(200);
+  const workers = await Promise.all([send(api, "notifications/send"), send(api, "notifications/send")]);
+  expect(workers.every((response) => response.status() === 200)).toBe(true);
+  expect((await captures(request)).map((capture) => capture.payload.to[0]).sort()).toEqual([recipient, "second@example.com"].sort());
+  await page.reload();
+  await navigate(page, "Pengingat");
+  await page.getByRole("button", { name: "Piket Ruang Opsi", exact: true }).click();
+  const details = page.getByRole("dialog", { name: "Piket Ruang Opsi", exact: true });
+  await expect(details.getByText("Diberi tahu", { exact: true })).toHaveCount(2);
+  await expect(details.getByRole("combobox", { name: "Status Arpeggio" })).toContainText("Terjadwal");
+  await settleAnimations(page);
+  await details.screenshot({ path: `.impeccable/review/notifications-notified-${test.info().project.name}.png` });
+  await page.keyboard.press("Escape");
+  await selector.click();
+  await page.getByRole("option", { name: "23.00–23.59 WIB", exact: true }).click();
+  await controls.getByRole("button", { name: "Simpan waktu", exact: true }).click();
+  await expect(page.getByText("Waktu pengiriman tersimpan", { exact: true }).last()).toBeVisible();
+  const snapshot = await (await api.get("/api/snapshot")).json();
+  expect(snapshot.notificationSettings.dailyHour).toBe(23);
+  for (const dailyHour of [-1, 24, "7", 1.5])
+    expect((await send(api, "notification-settings", "PUT", { dailyHour, version: snapshot.notificationSettings.version })).status()).toBe(400);
+  expect((await send(api, "notification-settings", "PUT", { dailyHour: 3, version: 1 })).status()).toBe(409);
+  expect((await send(api, "notification-settings", "PUT", { dailyHour: 3, version: snapshot.notificationSettings.version })).status()).toBe(200);
+  await send(api, "auth/logout");
+  await signIn(page, recipient, recipient);
+  await expect(page.getByRole("heading", { name: "Jadwal piket", exact: true })).toBeVisible();
+  expect((await send(api, "notifications/send")).status()).toBe(403);
+  expect((await send(api, "notification-settings", "PUT", { dailyHour: 4, version: snapshot.notificationSettings.version + 1 })).status()).toBe(403);
+  await navigate(page, "Pengingat");
+  await expect(page.getByRole("button", { name: "Kirim semua", exact: true })).toHaveCount(0);
+});
+
+test("WIB cron releases only the chosen window and retries failures without releasing new waiting assignments", async ({ request }) => {
+  await admin(request);
+  const hour = Number((await db.query("SELECT extract(hour FROM now() AT TIME ZONE 'Asia/Jakarta')::int AS hour")).rows[0].hour);
+  const otherHour = (hour + 1) % 24;
+  const headers = { Authorization: "Bearer e2e-private-cron-secret-32-characters" };
+  const path = (slot: number) => `/api/cron/notifications/${String(slot).padStart(2, "0")}`;
+  expect((await request.get(path(hour))).status()).toBe(401);
+  let settings = (await (await request.get("/api/snapshot")).json()).notificationSettings;
+  expect((await send(request, "notification-settings", "PUT", { dailyHour: otherHour, version: settings.version })).status()).toBe(200);
+  const id = await member(request);
+  const value = schedule(id, 5);
+  await send(request, "schedules", "POST", value);
+  expect((await request.get(path(hour), { headers })).status()).toBe(200);
+  expect((await request.get(path(otherHour), { headers })).status()).toBe(200);
+  expect(await captures(request)).toHaveLength(0);
+  settings = (await (await request.get("/api/snapshot")).json()).notificationSettings;
+  expect((await send(request, "notification-settings", "PUT", { dailyHour: hour, version: settings.version })).status()).toBe(200);
+  await request.post("http://127.0.0.1:3419/mode/rate-limit");
+  expect((await request.get(path(hour), { headers })).status()).toBe(200);
+  expect((await schedules(request))[0].assignments[0].notificationStatus).toBe("assigned");
+  expect((await db.query("SELECT state, error_code FROM email_jobs WHERE schedule_id = $1", [value.requestId])).rows[0]).toEqual({ state: "pending", error_code: "rate_limit_exceeded" });
+  await request.post("http://127.0.0.1:3419/mode/ok");
+  settings = (await (await request.get("/api/snapshot")).json()).notificationSettings;
+  await send(request, "notification-settings", "PUT", { dailyHour: null, version: settings.version });
+  const next = schedule(id, 8);
+  await send(request, "schedules", "POST", next);
+  await expect.poll(async () => (await db.query("SELECT count(*)::int AS count FROM worker_leases")).rows[0].count).toBe(0);
+  await db.query("UPDATE email_jobs SET next_attempt_at = now() WHERE schedule_id = $1", [value.requestId]);
+  const retry = await request.get(path(hour), { headers });
+  expect(retry.status()).toBe(200);
+  expect((await retry.json()).sent).toBe(1);
+  expect(await captures(request)).toHaveLength(1);
+  const snapshots = await schedules(request);
+  expect(snapshots.find((item: { id: string }) => item.id === value.requestId).assignments[0].notificationStatus).toBe("notified");
+  expect(snapshots.find((item: { id: string }) => item.id === next.requestId).assignments[0].notificationStatus).toBe("assigned");
+  await send(request, "notifications/send");
+  expect(await captures(request)).toHaveLength(2);
+  await request.get(path(hour), { headers });
+  await send(request, "notifications/send");
+  expect(await captures(request)).toHaveLength(2);
+});
+
+test("shadcn spinner covers initial loading and connection failures keep retry available", async ({ page }) => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/snapshot", async (route) => {
+    await pending;
+    await route.continue();
+  });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  try {
+    await expect(page.getByRole("status", { name: "Memuat aplikasi", exact: true })).toBeVisible();
+    await expect(page.getByText("Memuat Piket Opsi…", { exact: true })).toHaveCount(0);
+    await expect(page.locator("main")).toHaveAttribute("aria-busy", "true");
+    await page.screenshot({ path: `.impeccable/review/loading-${test.info().project.name}.png`, fullPage: true });
+  } finally {
+    release();
+  }
+  await expect(page.getByLabel("Email atau admin", { exact: true })).toBeVisible();
+  await page.unroute("**/api/snapshot");
+  await page.route("**/api/snapshot", (route) => route.fulfill({
+    status: 503, contentType: "application/json", body: JSON.stringify({ error: "Koneksi uji tidak tersedia." }),
+  }));
+  await page.reload();
+  await expect(page.getByText("Koneksi belum tersedia", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Coba lagi", exact: true })).toBeVisible();
+  await page.unroute("**/api/snapshot");
+  await page.getByRole("button", { name: "Coba lagi", exact: true }).click();
+  await expect(page.getByLabel("Email atau admin", { exact: true })).toBeVisible();
+});
+
+test("admin onboarding, organization-based assignment, manual email, and persistence", async ({
   page,
   request,
 }) => {
@@ -190,7 +519,7 @@ test("admin onboarding, organization-based assignment, immediate email, and pers
   await page.getByRole("option", { name: "BEM", exact: true }).click();
   await expect(dialog.getByRole("checkbox")).toHaveCount(1);
   await dialog.getByRole("checkbox").first().check();
-  // A future date also proves assignment mail is sent on the assignment day.
+  // A future date also proves manual assignment mail can be sent on the assignment day.
   const plannedDate = shiftDate(jakartaToday(), 2);
   const [year, month, day] = plannedDate.split("-").map(Number);
   await dialog.getByRole("button", { name: "Pilih tanggal jadwal" }).click();
@@ -209,6 +538,7 @@ test("admin onboarding, organization-based assignment, immediate email, and pers
     .getByRole("button", { name: "Buat jadwal", exact: true })
     .click();
   await expect(dialog).toHaveCount(0);
+  expect((await send(page.context().request, "notifications/send")).status()).toBe(200);
   await expect.poll(async () => (await captures(request)).length).toBe(1);
   const emails = await captures(request);
   expect(emails[0].payload.to).toEqual([recipient]);
@@ -279,7 +609,7 @@ test("member receives password notification and first setup omits current passwo
   ).toHaveCount(0);
   await expect(
     page.getByLabel("Kata sandi saat ini", { exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await page.reload();
   await expect(
     page.getByRole("heading", { name: "Jadwal piket" }),
@@ -293,7 +623,7 @@ test("member receives password notification and first setup omits current passwo
         newPassword: "Another-unique-passphrase!",
       })
     ).status(),
-  ).toBe(400);
+  ).toBe(200);
   await page.goto(`/?jadwal=${scheduleId}`);
   await expect(
     page
@@ -533,6 +863,7 @@ test("date-only schedules preserve legacy data, allow today's email, and reject 
     notes: "Updated date-only schedule",
     assignments: [{ memberId: id }],
   })).status()).toBe(200);
+  expect((await send(request, "notifications/send")).status()).toBe(200);
   await expect.poll(async () => (await captures(request)).length).toBe(1);
   const email = (await captures(request))[0];
   expect(email.payload.text).toContain(`Tanggal: ${today}`);
@@ -550,13 +881,14 @@ test("date-only schedules preserve legacy data, allow today's email, and reject 
   expect((await db.query("SELECT count(*)::int AS count FROM email_jobs WHERE schedule_id = $1", [past.requestId])).rows[0].count).toBe(0);
 });
 
-test("assignment email is immediate, H−1 cron is protected and repeated runs deduplicate", async ({
+test("manual assignment email is immediate, H−1 cron is protected and repeated runs deduplicate", async ({
   request,
 }) => {
   await admin(request);
   const id = await member(request);
   const first = schedule(id, 2);
   expect((await send(request, "schedules", "POST", first)).status()).toBe(201);
+  expect((await send(request, "notifications/send")).status()).toBe(200);
   await expect.poll(async () => (await captures(request)).length).toBe(1);
   const assignment = (await captures(request))[0];
   expect(assignment.key).toContain("assignment/");
@@ -599,6 +931,7 @@ test("mail failures persist, retries are idempotent, expired uncertainty needs r
   await request.post("http://127.0.0.1:3419/mode/ambiguous");
   const first = schedule(id, 8);
   expect((await send(request, "schedules", "POST", first)).status()).toBe(201);
+  expect((await send(request, "notifications/send")).status()).toBe(200);
   await expect
     .poll(
       async () =>
@@ -631,6 +964,7 @@ test("mail failures persist, retries are idempotent, expired uncertainty needs r
   expect((await send(request, "schedules", "POST", uncertain)).status()).toBe(
     201,
   );
+  expect((await send(request, "notifications/send")).status()).toBe(200);
   await expect.poll(async () => (await captures(request)).length).toBe(2);
   await expect
     .poll(
@@ -663,6 +997,7 @@ test("mail failures persist, retries are idempotent, expired uncertainty needs r
   );
   const queued = schedule(id, 12);
   expect((await send(request, "schedules", "POST", queued)).status()).toBe(201);
+  expect((await send(request, "notifications/send")).status()).toBe(200);
   await expect
     .poll(
       async () =>
@@ -744,6 +1079,223 @@ test("mobile calendar uses dots and distinct today, filters work, themes persist
   });
 });
 
+test("member CRUD keeps history, cancels reminders and removes archived members from assignment forms", async ({ page, request, playwright }) => {
+  const api = page.context().request;
+  await admin(api);
+  const id = await member(api);
+  const value = schedule(id, 5);
+  expect((await send(api, "schedules", "POST", value)).status()).toBe(201);
+  await send(api, "notifications/send");
+  expect((await send(api, `schedules/${value.requestId}/status`, "PATCH", { memberId: id, status: "done", version: 1 })).status()).toBe(200);
+  await request.post("http://127.0.0.1:3419/mode/rate-limit");
+  const later = schedule(id, 1);
+  await send(api, "schedules", "POST", later);
+  await expect.poll(async () => (await db.query("SELECT count(*)::int AS count FROM worker_leases")).rows[0].count).toBe(0);
+  const memberSession = await playwright.request.newContext({ baseURL: origin });
+  await send(memberSession, "auth/login", "POST", { email: recipient, password: recipient });
+  await page.goto("/");
+  await navigate(page, "Anggota");
+  await page.getByRole("button", { name: "Aksi Arpeggio", exact: true }).click();
+  await settleAnimations(page);
+  await page.screenshot({ path: `.impeccable/review/member-actions-${test.info().project.name}.png`, fullPage: true });
+  await page.getByRole("menuitem", { name: "Edit anggota", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "Edit anggota", exact: true });
+  await expect(editor.getByLabel("Nama lengkap")).toHaveValue("Arpeggio");
+  await expect(editor.getByLabel("Email", { exact: true })).toHaveValue(recipient);
+  await editor.getByLabel("Nama lengkap").fill("Arpeggio Baru");
+  await editor.getByRole("combobox", { name: "Organisasi", exact: true }).click();
+  await page.getByRole("option", { name: "BPM", exact: true }).click();
+  await settleAnimations(page);
+  await page.screenshot({ path: `.impeccable/review/member-edit-${test.info().project.name}.png`, fullPage: true });
+  await editor.getByRole("button", { name: "Simpan perubahan", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByRole("cell", { name: "Arpeggio Baru" }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Aksi Arpeggio Baru", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Hapus anggota", exact: true }).click();
+  const confirmation = page.getByRole("alertdialog", { name: "Hapus anggota?", exact: true });
+  await expect(confirmation).toContainText("riwayatnya tetap tersimpan");
+  await settleAnimations(page);
+  await page.screenshot({ path: `.impeccable/review/member-delete-${test.info().project.name}.png`, fullPage: true });
+  await confirmation.getByRole("button", { name: "Batal", exact: true }).click();
+  await expect(page.getByRole("cell", { name: "Arpeggio Baru" }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Aksi Arpeggio Baru", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Hapus anggota", exact: true }).click();
+  await confirmation.getByRole("button", { name: "Hapus anggota", exact: true }).click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Aksi Arpeggio Baru", exact: true })).toHaveCount(0);
+  expect((await memberSession.get("/api/snapshot")).status()).toBe(401);
+  expect((await send(memberSession, "auth/login", "POST", { email: recipient, password: recipient })).status()).toBe(401);
+  const snapshot = await (await api.get("/api/snapshot")).json();
+  expect(snapshot.members.find((m: { id: string }) => m.id === id)).toMatchObject({ deleted: true, version: 3, name: "Arpeggio Baru", organization: "BPM" });
+  expect(snapshot.schedules).toHaveLength(2);
+  expect(snapshot.schedules.find((s: { id: string }) => s.id === value.requestId).assignments[0]).toMatchObject({ memberId: id, status: "done", notificationStatus: "notified" });
+  expect((await send(api, "schedules", "POST", schedule(id, 10))).status()).toBe(400);
+  const saved = snapshot.schedules.find((s: { id: string }) => s.id === later.requestId);
+  await request.post("http://127.0.0.1:3419/mode/ok");
+  expect((await send(api, `schedules/${saved.id}`, "PUT", { ...later, notes: "Riwayat tetap ada", version: saved.version })).status()).toBe(200);
+  await send(api, "notifications/send");
+  await api.get("/api/cron/reminders", { headers: { Authorization: "Bearer e2e-private-cron-secret-32-characters" } });
+  expect(await captures(request)).toHaveLength(1);
+  expect((await db.query("SELECT state FROM email_jobs WHERE member_id = $1 AND state NOT IN ('sent', 'cancelled')", [id])).rows).toHaveLength(0);
+  await navigate(page, "Jadwal");
+  await page.getByRole("button", { name: "Buat jadwal", exact: true }).first().click();
+  await expect(page.getByRole("dialog", { name: "Buat jadwal", exact: true }).getByRole("checkbox")).toHaveCount(0);
+  await page.getByRole("button", { name: "Batal", exact: true }).click();
+  await page.goto(`/?jadwal=${value.requestId}`);
+  await expect(page.getByRole("dialog", { name: "Piket Ruang Opsi", exact: true }).getByText("Anggota dihapus", { exact: true })).toBeVisible();
+  expect((await db.query("SELECT count(*)::int AS count FROM audit_events WHERE target_id = $1 AND action = 'member.deleted'", [id])).rows[0].count).toBe(1);
+  await memberSession.dispose();
+});
+
+test("member email edits rotate initial credentials, preserve chosen passwords and retarget unsent mail safely", async ({ request, playwright }) => {
+  await admin(request);
+  const id = await member(request);
+  const value = schedule(id, 4);
+  await send(request, "schedules", "POST", value);
+  const memberSession = await playwright.request.newContext({ baseURL: origin });
+  await send(memberSession, "auth/login", "POST", { email: recipient, password: recipient });
+  const changedEmail = "changed@example.com";
+  expect((await send(request, `members/${id}`, "PUT", { name: "Changed", email: changedEmail, organization: "LPM", version: 1 })).status()).toBe(200);
+  expect((await memberSession.get("/api/snapshot")).status()).toBe(401);
+  expect((await send(memberSession, "auth/login", "POST", { email: recipient, password: recipient })).status()).toBe(401);
+  expect((await send(memberSession, "auth/login", "POST", { email: changedEmail, password: recipient })).status()).toBe(401);
+  expect((await send(memberSession, "auth/login", "POST", { email: changedEmail, password: changedEmail })).status()).toBe(200);
+  await send(memberSession, "auth/password", "POST", { newPassword: memberPassword });
+  await request.post("http://127.0.0.1:3419/mode/rate-limit");
+  await send(request, "notifications/send");
+  expect(await captures(request)).toHaveLength(0);
+  expect((await send(request, `members/${id}`, "PUT", { name: "Final", email: "final@example.com", organization: "BEM", version: 2 })).status()).toBe(200);
+  expect((await memberSession.get("/api/snapshot")).status()).toBe(401);
+  expect((await send(memberSession, "auth/login", "POST", { email: "final@example.com", password: memberPassword })).status()).toBe(200);
+  await request.post("http://127.0.0.1:3419/mode/ok");
+  await send(request, "emails/process");
+  const emails = await captures(request);
+  expect(emails).toHaveLength(1);
+  expect(emails[0].payload.to).toEqual(["final@example.com"]);
+  expect(emails[0].payload.text).toContain("Halo Final,");
+  expect(emails[0].key).toContain("/member/3");
+  expect((await send(request, `members/${id}`, "PUT", { name: "Final Again", email: "again@example.com", organization: "BEM", version: 3 })).status()).toBe(200);
+  await send(request, "notifications/send");
+  expect(await captures(request)).toHaveLength(1);
+  expect((await schedules(request))[0].assignments[0].notificationStatus).toBe("notified");
+  await memberSession.dispose();
+});
+
+test("member mutations enforce permissions, optimistic concurrency and ambiguous mail safety", async ({ request, playwright }) => {
+  const id = randomUUID();
+  expect((await send(request, `members/${id}`, "PUT")).status()).toBe(401);
+  expect((await send(request, `members/${id}`, "DELETE")).status()).toBe(401);
+  await send(request, "auth/login", "POST", { email: "admin", password: "admin" });
+  expect((await send(request, `members/${id}`, "DELETE", { version: 1 })).status()).toBe(403);
+  await admin(request);
+  const first = await member(request), second = await member(request, "other@example.com", "Other");
+  const memberSession = await playwright.request.newContext({ baseURL: origin });
+  await send(memberSession, "auth/login", "POST", { email: recipient, password: recipient });
+  expect((await send(memberSession, `members/${first}`, "PUT", { name: "Bad", email: recipient, organization: "BEM", version: 1 })).status()).toBe(403);
+  expect((await send(memberSession, `members/${first}`, "DELETE", { version: 1 })).status()).toBe(403);
+  const changes = { name: "Changed", email: recipient, organization: "BPM", version: 1 };
+  for (const invalid of [{ email: "bad" }, { name: "" }, { organization: "Unknown" }, { version: "1" }])
+    expect((await send(request, `members/${first}`, "PUT", { ...changes, ...invalid })).status()).toBe(400);
+  expect((await send(request, `members/${first}`, "PUT", { ...changes, email: "other@example.com" })).status()).toBe(409);
+  const concurrent = await Promise.all([send(request, `members/${first}`, "PUT", changes), send(request, `members/${first}`, "PUT", { ...changes, name: "Other update" })]);
+  expect(concurrent.map((r) => r.status()).sort()).toEqual([200, 409]);
+  expect((await send(request, `members/${first}`, "DELETE", { version: 1 })).status()).toBe(409);
+  const value = schedule(first, 6);
+  await send(request, "schedules", "POST", value);
+  await request.post("http://127.0.0.1:3419/mode/ambiguous");
+  await send(request, "notifications/send");
+  expect((await send(request, `members/${first}`, "PUT", { ...changes, email: "new@example.com", version: 2 })).status()).toBe(409);
+  expect((await db.query("SELECT email FROM users WHERE id = $1", [first])).rows[0].email).toBe(recipient);
+  expect((await send(request, `members/${first}`, "DELETE", { version: 2 })).status()).toBe(200);
+  expect((await send(request, `members/${first}`, "DELETE", { version: 2 })).status()).toBe(200);
+  await request.post("http://127.0.0.1:3419/mode/ok");
+  await db.query("UPDATE email_jobs SET next_attempt_at = now() WHERE member_id = $1", [first]);
+  await send(request, "emails/process");
+  expect(await captures(request)).toHaveLength(1);
+  expect((await send(request, `members/${first}`, "PUT", { ...changes, version: 3 })).status()).toBe(404);
+  expect((await send(request, "members", "POST", { requestId: first, name: "Recreate", email: recipient, organization: "BEM" })).status()).toBe(409);
+  expect((await send(request, "members", "POST", { requestId: randomUUID(), name: "Recreate", email: recipient, organization: "BEM" })).status()).toBe(409);
+  expect((await send(request, "members/admin", "DELETE", { version: 1 })).status()).toBe(400);
+  expect((await send(request, `members/${second}`, "DELETE", { version: 1 })).status()).toBe(200);
+  await memberSession.dispose();
+});
+
+test("compact notification picker scrolls, and new schedule prompts send only its assignments", async ({ page, request }) => {
+  const api = page.context().request;
+  await admin(api);
+  const id = await member(api);
+  const waiting = schedule(id, 9);
+  await send(api, "schedules", "POST", waiting);
+  await page.goto("/");
+  await page.evaluate(() => localStorage.setItem("theme", "dark"));
+  await page.reload();
+  await navigate(page, "Pengingat");
+  const selector = page.getByRole("combobox", { name: "Pengiriman otomatis (WIB)" });
+  await selector.click();
+  const popup = page.locator('[data-slot="select-content"]');
+  await expect(page.getByRole("option")).toHaveCount(25);
+  await settleAnimations(page);
+  const box = await popup.boundingBox();
+  expect(box!.height).toBeLessThanOrEqual(241);
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  expect(await popup.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  await page.screenshot({ path: `.impeccable/review/notification-time-picker-${test.info().project.name}.png`, fullPage: true });
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await expect(selector).toContainText("23.00–23.59 WIB");
+  await page.getByRole("button", { name: "Simpan waktu", exact: true }).click();
+  await expect(page.getByText("Waktu pengiriman tersimpan", { exact: true })).toBeVisible();
+  await navigate(page, "Jadwal");
+  await page.getByRole("button", { name: "Buat jadwal", exact: true }).first().click();
+  const editor = page.getByRole("dialog", { name: "Buat jadwal", exact: true });
+  await editor.getByRole("checkbox").first().check();
+  await editor.getByRole("button", { name: "Pilih tanggal jadwal", exact: true }).click();
+  const [year, month, day] = shiftDate(jakartaToday(), 3).split("-").map(Number);
+  const dayButton = page.locator(`[data-slot="calendar"] [data-day="${day}/${month}/${year}"]`);
+  if ((await dayButton.count()) === 0) await page.getByRole("button", { name: "Go to the Next Month" }).click();
+  await dayButton.click();
+  await editor.getByRole("button", { name: "Buat jadwal", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  const prompt = page.locator('[data-sonner-toast]').filter({ hasText: "Kirim notifikasi kepada anggota yang baru ditugaskan?" });
+  await expect(prompt).toBeVisible();
+  await expect(prompt.getByRole("button", { name: "Nanti", exact: true })).toBeVisible();
+  expect(await captures(request)).toHaveLength(0);
+  await settleAnimations(page);
+  await page.screenshot({ path: `.impeccable/review/schedule-notification-prompt-${test.info().project.name}.png`, fullPage: true });
+  await prompt.getByRole("button", { name: "Kirim sekarang", exact: true }).click();
+  await expect.poll(async () => (await captures(request)).length).toBe(1);
+  const values = await schedules(api);
+  const added = values.find((s: { id: string }) => s.id !== waiting.requestId);
+  expect((await captures(request))[0].key).toContain(added.id);
+  expect(added.assignments[0].notificationStatus).toBe("notified");
+  expect(values.find((s: { id: string }) => s.id === waiting.requestId).assignments[0].notificationStatus).toBe("assigned");
+  await send(api, "notifications/send", "POST", { scheduleId: added.id });
+  expect(await captures(request)).toHaveLength(1);
+  expect((await send(api, "notifications/send", "POST", { scheduleId: "bad" })).status()).toBe(400);
+});
+
+test("later admin password changes omit the old password and revoke other sessions", async ({ page, playwright }) => {
+  const api = page.context().request;
+  await admin(api);
+  const otherSession = await playwright.request.newContext({ baseURL: origin });
+  await send(otherSession, "auth/login", "POST", { email: "admin", password: adminPassword });
+  await page.goto("/");
+  await navigate(page, "Pengaturan");
+  await expect(page.getByLabel("Kata sandi saat ini", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Kata sandi baru", { exact: true }).fill("Another-admin-password-2026!");
+  await page.getByLabel("Konfirmasi kata sandi baru", { exact: true }).fill("Another-admin-password-2026!");
+  await settleAnimations(page);
+  await page.screenshot({ path: `.impeccable/review/password-change-${test.info().project.name}.png`, fullPage: true });
+  await page.getByRole("button", { name: "Simpan kata sandi", exact: true }).click();
+  await expect(page.getByText("Kata sandi berhasil diperbarui. Sesi lain telah dikeluarkan.", { exact: true })).toBeVisible();
+  expect((await otherSession.get("/api/snapshot")).status()).toBe(401);
+  expect((await api.get("/api/snapshot")).status()).toBe(200);
+  expect((await send(api, "auth/password", "POST", { newPassword: "Another-admin-password-2026!" })).status()).toBe(400);
+  expect((await send(api, "auth/password", "POST", { newPassword: "short" })).status()).toBe(400);
+  await otherSession.dispose();
+});
+
 test("login rate limit is persisted in PostgreSQL", async ({ request }) => {
   for (let attempt = 0; attempt < 8; attempt++)
     expect(
@@ -772,6 +1324,7 @@ test("status changes cancel queued mail and concurrent workers deliver a restore
   await request.post("http://127.0.0.1:3419/mode/rate-limit");
   const value = schedule(id, 4);
   expect((await send(request, "schedules", "POST", value)).status()).toBe(201);
+  expect((await send(request, "notifications/send")).status()).toBe(200);
   await expect
     .poll(
       async () =>
@@ -810,8 +1363,8 @@ test("status changes cancel queued mail and concurrent workers deliver a restore
     ).status(),
   ).toBe(200);
   const workers = await Promise.all([
-    send(request, "emails/process"),
-    send(request, "emails/process"),
+    send(request, "notifications/send"),
+    send(request, "notifications/send"),
   ]);
   expect(workers.every((result) => result.status() === 200)).toBe(true);
   await expect.poll(async () => (await captures(request)).length).toBe(1);
