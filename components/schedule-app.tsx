@@ -447,6 +447,12 @@ export default function ScheduleApp() {
         description:
           "Anda masih menggunakan email sebagai kata sandi. Atur kata sandi baru melalui Pengaturan.",
         duration: 10000,
+        classNames: {
+          toast: "grid! grid-cols-[auto_minmax(0,1fr)]! items-start! gap-x-3! gap-y-3!",
+          icon: "mt-0.5! self-start!",
+          content: "min-w-0",
+          actionButton: "col-start-2! m-0! h-11! justify-self-end! px-4! sm:h-8!",
+        },
         action: {
           label: "Atur sekarang",
           onClick: () => setSection("settings"),

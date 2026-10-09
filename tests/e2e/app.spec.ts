@@ -570,6 +570,8 @@ test("member receives password notification and first setup omits current passwo
   const created = await send(request, "schedules", "POST", schedule(id, 3));
   expect(created.status()).toBe(201);
   const scheduleId = (await created.json()).id;
+  if (test.info().project.name === "mobile")
+    await page.setViewportSize({ width: 388, height: 839 });
   await signIn(page, recipient, recipient);
   await expect(
     page.getByRole("tab", { name: "Detail", exact: true }),
@@ -579,9 +581,38 @@ test("member receives password notification and first setup omits current passwo
       exact: false,
     }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Atur kata sandi", exact: true })
-    .click();
+  const reminder = page.locator('[data-sonner-toast]').filter({ hasText: "Lindungi akun Anda" });
+  const action = reminder.getByRole("button", { name: "Atur sekarang", exact: true });
+  async function checkReminder() {
+    await expect(reminder).toBeVisible();
+    await settleAnimations(page);
+    const panel = (await reminder.boundingBox())!;
+    const copy = (await reminder.locator('[data-content]').boundingBox())!;
+    const button = (await action.boundingBox())!;
+    expect(button.y).toBeGreaterThanOrEqual(copy.y + copy.height + 8);
+    expect(copy.width).toBeGreaterThan(button.width);
+    expect(button.x + button.width).toBeLessThanOrEqual(panel.x + panel.width);
+    expect(panel.x).toBeGreaterThanOrEqual(0);
+    expect(panel.x + panel.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+    expect(panel.y + panel.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+    expect(await reminder.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    if (test.info().project.name === "mobile") expect(button.height).toBeGreaterThanOrEqual(44);
+  }
+  await checkReminder();
+  await page.screenshot({ path: `.impeccable/review/password-reminder-light-${test.info().project.name}.png`, fullPage: true });
+  await page.getByRole("button", { name: "Pilih tema", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Gelap", exact: true }).click();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await checkReminder();
+  await page.screenshot({ path: `.impeccable/review/password-reminder-dark-${test.info().project.name}.png`, fullPage: true });
+  if (test.info().project.name === "mobile") {
+    await page.setViewportSize({ width: 320, height: 839 });
+    await checkReminder();
+    await page.screenshot({ path: ".impeccable/review/password-reminder-320.png", fullPage: true });
+    await page.setViewportSize({ width: 388, height: 839 });
+  }
+  await action.focus();
+  await page.keyboard.press("Enter");
   await expect(
     page.getByLabel("Kata sandi saat ini", { exact: true }),
   ).toHaveCount(0);
