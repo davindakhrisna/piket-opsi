@@ -34,7 +34,7 @@ export async function queueEmails(
   const origin = appOrigin();
   for (const row of result.rows) {
     const link = `${origin}/?jadwal=${row.id}`;
-    const text = `Halo ${row.name},\n\n${kind === "assignment" ? "Anda telah ditugaskan untuk piket di Ruang Opsi." : "Pengingat: besok Anda bertugas piket di Ruang Opsi."}\n\nTanggal: ${row.date}\nLokasi: Ruang Opsi\n${row.notes ? `Catatan: ${row.notes}\n` : ""}\nBuka jadwal: ${link}\n\nSetelah bertugas, tandai tugas Anda sebagai selesai di aplikasi.\nJika masih menggunakan kata sandi awal, ubah melalui Pengaturan.\n\nPiket Opsi · Asia/Jakarta`;
+    const text = `Halo ${row.name},\n\n${kind === "assignment" ? "Anda telah ditugaskan untuk piket di Ruang Opsi." : "Pengingat: besok Anda bertugas piket di Ruang Opsi."}\n\nTanggal: ${row.date}\nLokasi: Ruang Opsi\n${row.notes ? `Catatan: ${row.notes}\n` : ""}\nBuka jadwal: ${link}\n\nSetelah bertugas, tandai tugas Anda sebagai selesai di aplikasi.\nJika masih menggunakan kata sandi awal, ubah melalui Pengaturan.\n\n`;
     const payload = {
       from: process.env.RESEND_FROM,
       to: [row.email],
@@ -58,7 +58,11 @@ export async function queueEmails(
   }
 }
 
-export async function releaseAssignmentEmails(slot?: number, actorId?: string, scheduleId?: string) {
+export async function releaseAssignmentEmails(
+  slot?: number,
+  actorId?: string,
+  scheduleId?: string,
+) {
   const client = await database().connect();
   try {
     await client.query("BEGIN");

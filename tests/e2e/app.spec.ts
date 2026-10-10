@@ -362,7 +362,7 @@ test("admin configures daily notification time and manually notifies each assign
   expect((await captures(request)).map((capture) => capture.payload.to[0]).sort()).toEqual([recipient, "second@example.com"].sort());
   await page.reload();
   await navigate(page, "Pengingat");
-  await page.getByRole("button", { name: "Piket Ruang Opsi", exact: true }).click();
+  await page.getByRole("button", { name: /^(?:JADWAL-\d+|Piket Ruang Opsi)$/ }).first().click();
   const details = page.getByRole("dialog", { name: "Piket Ruang Opsi", exact: true });
   await expect(details.getByText("Diberi tahu", { exact: true })).toHaveCount(2);
   await expect(details.getByRole("combobox", { name: "Status Arpeggio" })).toContainText("Terjadwal");

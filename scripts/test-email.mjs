@@ -36,7 +36,9 @@ export async function main(args) {
     positionals.length !== 1 ||
     !/^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(recipient ?? "")
   )
-    throw new Error("Provide one recipient: pnpm test:email someone@example.com");
+    throw new Error(
+      "Provide one recipient: pnpm test:email someone@example.com",
+    );
 
   const from = process.env.RESEND_FROM?.trim();
   if (!from) throw new Error("Set RESEND_FROM in .env.local first.");
@@ -48,7 +50,7 @@ export async function main(args) {
   const payload = {
     from,
     to: [recipient],
-    subject: `Uji email Piket Opsi · ${when} WIB`,
+    subject: `Uji email ${when} WIB`,
     text: `Halo,\n\nIni adalah email pengujian dari Piket Opsi. Pesan ini bukan penugasan piket.\n\nDikirim: ${when} WIB\n\nPiket Opsi · Ruang Opsi`,
     ...(!values["normal-priority"] && {
       headers: { "X-Priority": "1", Importance: "high" },
@@ -87,27 +89,36 @@ export async function main(args) {
       typeof data?.message === "string"
         ? data.message.replaceAll(apiKey, "[REDACTED]")
         : "Check the API key, verified sender, recipient, and sending quota.";
-    throw new Error(`Resend rejected the email (HTTP ${response.status}): ${detail}`);
+    throw new Error(
+      `Resend rejected the email (HTTP ${response.status}): ${detail}`,
+    );
   }
   if (typeof data?.id !== "string" || !data.id)
     throw new Error(
       "Delivery result unknown: Resend returned no email ID. Check its dashboard before rerunning.",
     );
   console.log(
-    JSON.stringify({
-      accepted: true,
-      from,
-      to: recipient,
-      subject: payload.subject,
-      providerId: data.id,
-    }, null, 2),
+    JSON.stringify(
+      {
+        accepted: true,
+        from,
+        to: recipient,
+        subject: payload.subject,
+        providerId: data.id,
+      },
+      null,
+      2,
+    ),
   );
   console.log(
     "Check Inbox/Spam and Show original for SPF, DKIM, and DMARC. Acceptance alone does not confirm inbox delivery.",
   );
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   try {
     for (const name of [".env.local", ".env"]) {
       const file = fileURLToPath(new URL(`../${name}`, import.meta.url));

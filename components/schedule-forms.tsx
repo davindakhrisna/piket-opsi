@@ -144,9 +144,7 @@ export function LoginScreen({
             bertugas, dan menandai pekerjaan yang selesai.
           </p>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Piket Opsi · Asia/Jakarta (WIB)
-        </p>
+        <p className="text-sm text-muted-foreground">Asia/Jakarta (WIB)</p>
       </section>
       <main className="flex min-w-0 flex-col items-center justify-center gap-6 px-5 py-12">
         <div className="flex items-center gap-2 text-lg font-semibold lg:hidden">
@@ -155,7 +153,7 @@ export function LoginScreen({
         </div>
         <Card className="w-full max-w-sm">
           <CardHeader>
-            <CardTitle className="text-xl">Masuk ke Piket Opsi</CardTitle>
+            <CardTitle className="text-xl">Login</CardTitle>
             <CardDescription>
               Gunakan akun yang dibuat oleh admin.
             </CardDescription>
@@ -163,7 +161,7 @@ export function LoginScreen({
           <CardContent>
             <form id="login-form" onSubmit={submit} className="space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="email">Email atau admin</Label>
+                <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
                   name="email"
@@ -268,8 +266,7 @@ export function PasswordForm({
           autoComplete="new-password"
         />
         <p className="text-xs text-muted-foreground">
-          Minimal 12 karakter. Gunakan kata sandi unik yang berbeda dari kata
-          sandi awal anda.
+          Minimal panjang sandi adalah 12 karakter.{" "}
         </p>
       </div>
       <div className="space-y-2">
@@ -400,48 +397,44 @@ export function NotificationControls({
   }
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Notifikasi penugasan</CardTitle>
-        <CardDescription>
-          Pilih waktu harian untuk semua penugasan yang belum diberi tahu, atau
-          kirim sekarang.
-        </CardDescription>
-      </CardHeader>
       <CardContent className="space-y-4">
         <form onSubmit={submit} className="space-y-3">
+          <Label htmlFor="notification-hour">Pengiriman otomatis (WIB)</Label>
+          <p
+            id="notification-window-hint"
+            className="text-xs text-muted-foreground"
+          >
+            Waktu berlaku setiap hari. Pengiriman otomatis berlangsung dalam
+            rentang satu jam yang dipilih.
+          </p>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="min-w-0 flex-1 space-y-2">
-              <Label htmlFor="notification-hour">
-                Pengiriman otomatis (WIB)
-              </Label>
-              <Select
-                items={items}
-                value={hour}
-                disabled={pending || sending}
-                onValueChange={(value) => {
-                  if (value) {
-                    setHour(value);
-                    setError("");
-                  }
-                }}
+            <Select
+              items={items}
+              value={hour}
+              disabled={pending || sending}
+              onValueChange={(value) => {
+                if (value) {
+                  setHour(value);
+                  setError("");
+                }
+              }}
+            >
+              <SelectTrigger
+                id="notification-hour"
+                className="h-11! w-full md:h-8!"
+                aria-invalid={Boolean(error)}
+                aria-describedby="notification-window-hint"
               >
-                <SelectTrigger
-                  id="notification-hour"
-                  className="h-11! w-full md:h-8!"
-                  aria-invalid={Boolean(error)}
-                  aria-describedby="notification-window-hint"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="max-h-[min(15rem,var(--available-height))]">
-                  {items.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      {item.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="max-h-[min(15rem,var(--available-height))]">
+                {items.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
               type="submit"
               variant="outline"
@@ -451,13 +444,6 @@ export function NotificationControls({
               Simpan waktu
             </Button>
           </div>
-          <p
-            id="notification-window-hint"
-            className="text-xs text-muted-foreground"
-          >
-            Waktu berlaku setiap hari. Pengiriman otomatis berlangsung dalam
-            rentang satu jam yang dipilih.
-          </p>
           {error && (
             <Alert variant="destructive" role="alert">
               <AlertDescription>{error}</AlertDescription>
@@ -483,9 +469,9 @@ export function NotificationControls({
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Anggota yang sudah diberi tahu dilewati. Pengingat H−1 dikirim
-          terpisah. Mengubah jadwal tidak mengirim ulang penugasan kepada
-          anggota yang sudah diberi tahu.
+          Anggota yang sudah diberi tahu dilewati. Pengingat dikirim terpisah.
+          Mengubah jadwal tidak mengirim ulang penugasan kepada anggota yang
+          sudah diberi tahu.
         </p>
       </CardContent>
     </Card>

@@ -156,7 +156,7 @@ type Section = "schedules" | "members" | "reminders" | "settings";
 const sectionLabels: Record<Section, string> = {
   schedules: "Jadwal",
   members: "Anggota",
-  reminders: "Pengingat",
+  reminders: "Notifikasi",
   settings: "Pengaturan",
 };
 const nav = [
@@ -213,7 +213,7 @@ function AppSidebar({
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Ruang kerja</SidebarGroupLabel>
+          <SidebarGroupLabel>Dashboard</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {nav
@@ -247,20 +247,6 @@ function AppSidebar({
                 >
                   <Settings />
                   <span>Pengaturan</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  tooltip="Tentang Piket Opsi"
-                  onClick={() =>
-                    toast.info("Piket Opsi", {
-                      description:
-                        "Jadwal Ruang Opsi menggunakan WIB. Penugasan dikirim sesuai waktu admin atau manual, dengan pengingat sehari sebelum jadwal.",
-                    })
-                  }
-                >
-                  <CircleHelp />
-                  <span>Tentang Piket Opsi</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -448,10 +434,12 @@ export default function ScheduleApp() {
           "Anda masih menggunakan email sebagai kata sandi. Atur kata sandi baru melalui Pengaturan.",
         duration: 10000,
         classNames: {
-          toast: "grid! grid-cols-[auto_minmax(0,1fr)]! items-start! gap-x-3! gap-y-3!",
+          toast:
+            "grid! grid-cols-[auto_minmax(0,1fr)]! items-start! gap-x-3! gap-y-3!",
           icon: "mt-0.5! self-start!",
           content: "min-w-0",
-          actionButton: "col-start-2! m-0! h-11! justify-self-end! px-4! sm:h-8!",
+          actionButton:
+            "col-start-2! m-0! h-11! justify-self-end! px-4! sm:h-8!",
         },
         action: {
           label: "Atur sekarang",
@@ -801,7 +789,7 @@ export default function ScheduleApp() {
     { value: "all", label: "Semua tanggal" },
     ...["3", "7", "14", "30"].map((value) => ({
       value,
-      label: `${value} hari ke depan`,
+      label: `${value} hari`,
     })),
   ];
   const statusOptions = [
@@ -940,7 +928,7 @@ export default function ScheduleApp() {
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem className="hidden sm:block">
-                  Ruang kerja
+                  Dashboard
                 </BreadcrumbItem>
                 <BreadcrumbSeparator className="hidden sm:block" />
                 <BreadcrumbItem>
@@ -971,14 +959,14 @@ export default function ScheduleApp() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label="Lihat pengingat"
+                    aria-label="Lihat notifikasi"
                     onClick={() => setSection("reminders")}
                   />
                 }
               >
                 <Bell />
               </TooltipTrigger>
-              <TooltipContent>Lihat pengingat</TooltipContent>
+              <TooltipContent>Lihat notifikasi</TooltipContent>
             </Tooltip>
             <Avatar size="sm" className="hidden sm:flex">
               <AvatarFallback>{initials(user.name)}</AvatarFallback>
@@ -988,7 +976,6 @@ export default function ScheduleApp() {
         <div className="mx-auto w-full max-w-[1440px] space-y-7 p-4 pb-10 sm:p-6 lg:p-8">
           {!isAdmin && user.initialPassword && (
             <Alert>
-              <KeyRound />
               <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
                 <span>
                   Email Anda masih menjadi kata sandi awal. Atur kata sandi baru
@@ -1013,8 +1000,8 @@ export default function ScheduleApp() {
                   </h1>
                   <p className="mt-2 text-sm text-muted-foreground">
                     {isAdmin
-                      ? "Ruang Opsi · WIB. Atur piket dan pantau tugas seluruh anggota."
-                      : "Ruang Opsi · WIB. Lihat siapa yang bertugas dan kelola status piket Anda."}
+                      ? "Atur piket dan pantau tugas seluruh anggota."
+                      : "Pantau dan kelola tugas piket Anda."}
                   </p>
                 </div>
                 {isAdmin && (
@@ -1326,22 +1313,12 @@ export default function ScheduleApp() {
             <>
               <div>
                 <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-                  Pengingat email
+                  Notifikasi
                 </h1>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Tinjau penerima dan isi pengingat untuk setiap jadwal.
+                  Tinjau isi pengingat untuk setiap jadwal.
                 </p>
               </div>
-              <Alert>
-                <Mail />
-                <AlertDescription>
-                  {data.notificationSettings.dailyHour === null
-                    ? "Notifikasi penugasan dikirim manual oleh admin. "
-                    : `Notifikasi penugasan diproses setiap hari pukul ${notificationWindowLabel(data.notificationSettings.dailyHour)}. `}
-                  Pengingat H−1 tetap otomatis mulai pukul 07.00 WIB. Periksa
-                  status di bawah jika pengiriman tertunda.
-                </AlertDescription>
-              </Alert>
               {isAdmin && (
                 <NotificationControls
                   key={data.notificationSettings.version}
@@ -1358,10 +1335,8 @@ export default function ScheduleApp() {
                   <span className="text-muted-foreground">jadwal besok</span>
                 </span>
                 <span className="text-muted-foreground">
-                  Tautan jadwal disertakan di setiap email
-                </span>
-                <span className="ml-auto text-xs text-muted-foreground">
-                  Tanggal mengikuti WIB
+                  Pastikan check email anda untuk notifikasi penjadwalan dan
+                  tugas mendatang.
                 </span>
               </div>
               <div className="overflow-hidden rounded-xl border">
@@ -1372,12 +1347,12 @@ export default function ScheduleApp() {
                       <TableHead className="hidden md:table-cell">
                         Penerima
                       </TableHead>
-                      <TableHead>Pengingat H−1</TableHead>
+                      <TableHead>Pengingat</TableHead>
                       <TableHead className="pr-4 text-right">Email</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {reminderSchedules.map((schedule) => (
+                    {reminderSchedules.map((schedule, index) => (
                       <TableRow key={schedule.id}>
                         <TableCell className="pl-4">
                           <Button
@@ -1385,20 +1360,23 @@ export default function ScheduleApp() {
                             className="h-auto p-0 text-left whitespace-normal"
                             onClick={() => openSchedule(schedule)}
                           >
-                            {schedule.title}
+                            {`JADWAL-${String(index + 1).padStart(2, "0")}`}
                           </Button>
                           <p className="mt-1 text-xs text-muted-foreground">
                             {formatDate(schedule.date, true)}
                           </p>
-                          <Badge variant="secondary" className="mt-1">
-                            {
-                              schedule.assignments.filter(
-                                (assignment) =>
-                                  assignment.notificationStatus === "notified",
-                              ).length
-                            }
-                            /{schedule.assignments.length} diberi tahu
-                          </Badge>
+                          {isAdmin ? (
+                            <Badge variant="secondary" className="mt-1">
+                              {
+                                schedule.assignments.filter(
+                                  (assignment) =>
+                                    assignment.notificationStatus ===
+                                    "notified",
+                                ).length
+                              }
+                              {schedule.assignments.length} diberi tahu
+                            </Badge>
+                          ) : null}
                         </TableCell>
                         <TableCell className="hidden text-muted-foreground md:table-cell">
                           {isAdmin
@@ -1409,11 +1387,13 @@ export default function ScheduleApp() {
                           <span className="block text-sm">
                             {formatDate(shiftDate(schedule.date, -1), true)}
                           </span>
-                          <Badge variant="outline" className="mt-1">
-                            {schedule.date < today
-                              ? "Tanggal berlalu"
-                              : "Direncanakan"}
-                          </Badge>
+                          {isAdmin ? (
+                            <Badge variant="outline" className="mt-1">
+                              {schedule.date < today
+                                ? "Tanggal berlalu"
+                                : "Direncanakan"}
+                            </Badge>
+                          ) : null}
                         </TableCell>
                         <TableCell className="pr-4 text-right">
                           <Button
@@ -1442,99 +1422,6 @@ export default function ScheduleApp() {
                   </TableBody>
                 </Table>
               </div>
-              <section
-                className="space-y-4"
-                aria-label="Status pengiriman email"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h2 className="text-lg font-semibold">Status pengiriman</h2>
-                  {isAdmin && (
-                    <Button
-                      variant="outline"
-                      disabled={pending}
-                      onClick={async () => {
-                        setPending(true);
-                        try {
-                          await api("emails/process", "POST", {});
-                          await refresh();
-                          toast.success("Antrean diperiksa");
-                        } catch (error) {
-                          toast.error((error as Error).message);
-                        } finally {
-                          setPending(false);
-                        }
-                      }}
-                    >
-                      {pending ? "Memproses…" : "Coba kirim antrean"}
-                    </Button>
-                  )}
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Terkirim berarti email diterima sistem untuk diteruskan ke
-                  penerima. Batas paket gratis dapat menunda pengiriman. Email
-                  yang memerlukan pemeriksaan tidak dikirim ulang otomatis.
-                </p>
-                <div className="overflow-hidden rounded-xl border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Jenis</TableHead>
-                        <TableHead>Anggota</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {data.emails.map((job) => (
-                        <TableRow key={job.id}>
-                          <TableCell>
-                            {job.kind === "assignment"
-                              ? "Penugasan"
-                              : "Pengingat H−1"}
-                          </TableCell>
-                          <TableCell>
-                            {data.members.find(
-                              (member) => member.id === job.memberId,
-                            )?.name ?? "Anggota"}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">
-                              {
-                                {
-                                  waiting: "Menunggu pengiriman",
-                                  pending: "Mengantre",
-                                  sending: "Mengirim",
-                                  sent: "Terkirim",
-                                  cancelled: "Dibatalkan",
-                                  review: "Perlu pemeriksaan",
-                                }[job.state]
-                              }
-                            </Badge>
-                            {job.errorCode && (
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                {job.errorCode === "free_plan_quota"
-                                  ? "Batas pengiriman gratis tercapai"
-                                  : job.errorCode === "delivery_requires_review"
-                                    ? "Periksa riwayat email sebelum mengirim ulang"
-                                    : job.errorCode.replaceAll("_", " ")}
-                              </p>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {data.emails.length === 0 && (
-                        <TableRow>
-                          <TableCell
-                            colSpan={3}
-                            className="py-8 text-center text-muted-foreground"
-                          >
-                            Belum ada email penugasan atau pengingat.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </section>
             </>
           )}
 
@@ -1552,9 +1439,7 @@ export default function ScheduleApp() {
                 <Card>
                   <CardHeader>
                     <CardTitle>Profil</CardTitle>
-                    <CardDescription>
-                      Informasi akun yang dikelola admin.
-                    </CardDescription>
+                    <CardDescription>Informasi akun anda.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-5">
                     <div className="flex items-center gap-3">
@@ -1582,12 +1467,6 @@ export default function ScheduleApp() {
                           <dd className="mt-1">{user.organization}</dd>
                         </div>
                       )}
-                      <div>
-                        <dt className="text-muted-foreground">
-                          Zona waktu jadwal
-                        </dt>
-                        <dd className="mt-1">Asia/Jakarta (WIB)</dd>
-                      </div>
                     </dl>
                   </CardContent>
                 </Card>
@@ -1595,9 +1474,7 @@ export default function ScheduleApp() {
                   <CardHeader>
                     <CardTitle>Ubah kata sandi</CardTitle>
                     <CardDescription>
-                      {isAdmin
-                        ? "Kata sandi awal admin sudah diperbarui."
-                        : "Opsional. Pilih kata sandi baru untuk mengganti kata sandi awal."}
+                      {isAdmin ? "Kata sandi awal admin sudah diperbarui." : ""}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -1608,10 +1485,6 @@ export default function ScheduleApp() {
                   </CardContent>
                 </Card>
               </div>
-              <p className="max-w-xl text-xs leading-relaxed text-muted-foreground">
-                Kata sandi disimpan sebagai hash. Mengubah kata sandi mengakhiri
-                sesi lain yang menggunakan akun Anda.
-              </p>
             </>
           )}
         </div>
@@ -1898,7 +1771,7 @@ export default function ScheduleApp() {
               >
                 <TabsList className="w-full">
                   <TabsTrigger value="assignment">Penugasan</TabsTrigger>
-                  <TabsTrigger value="reminder">Pengingat H−1</TabsTrigger>
+                  <TabsTrigger value="reminder">Pengingat</TabsTrigger>
                 </TabsList>
               </Tabs>
               <dl className="space-y-3 text-xs">
