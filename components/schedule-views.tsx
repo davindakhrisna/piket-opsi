@@ -37,6 +37,7 @@ import {
   formatDate,
   initials,
   jakartaToday,
+  scheduleCode,
   statusLabels,
   type AssignmentStatus,
   type Member,
@@ -287,7 +288,7 @@ function ScheduleDay({
             key={schedule.id}
             className="block truncate rounded bg-muted px-1.5 py-1 text-left text-[11px] text-foreground"
           >
-            {schedule.title}
+            {scheduleCode(schedule, schedules)}
           </span>
         ))}
         {events.length > 2 && (
@@ -463,7 +464,7 @@ export function ScheduleCalendar({
                   onClick={() => onOpen(schedule)}
                   className="h-auto justify-start p-0 text-left whitespace-normal"
                 >
-                  {schedule.title}
+                  {scheduleCode(schedule, schedules)}
                 </Button>
                 {schedule.location && (
                   <p className="flex items-center gap-2 text-xs text-muted-foreground">

@@ -98,6 +98,13 @@ export function formatDate(key: string, short = false) {
   }).format(dateFromKey(key));
 }
 
+export function scheduleCode(schedule: Schedule, allSchedules: Schedule[]) {
+  const index = allSchedules.findIndex((s) => s.id === schedule.id);
+  return index >= 0
+    ? `JADWAL-${String(index + 1).padStart(2, "0")}`
+    : schedule.title;
+}
+
 export function initials(name: string) {
   return name
     .split(" ")
