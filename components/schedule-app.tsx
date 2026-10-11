@@ -660,6 +660,15 @@ export default function ScheduleApp() {
     status: AssignmentStatus,
   ) {
     if (statusPending.current) return;
+    const targetSchedule = data.schedules.find(
+      (schedule) => schedule.id === scheduleId,
+    );
+    if (!isAdmin && targetSchedule && targetSchedule.date > today) {
+      toast.error(
+        "Status tugas hanya dapat diubah pada hari jadwal atau setelahnya.",
+      );
+      return;
+    }
     statusPending.current = true;
     setPending(true);
     try {
@@ -1604,7 +1613,10 @@ export default function ScheduleApp() {
                     (item) => item.id === assignment.memberId,
                   );
                   if (!member) return null;
-                  const canChange = isAdmin || assignment.memberId === user.id;
+                  const canChange =
+                    isAdmin ||
+                    (assignment.memberId === user.id &&
+                      selectedSchedule.date <= today);
                   return (
                     <div
                       key={member.id}
@@ -1644,7 +1656,15 @@ export default function ScheduleApp() {
                           </Badge>
                         </div>
                         {!canChange && (
-                          <StatusBadge status={assignment.status} />
+                          <div className="flex flex-col items-end gap-1">
+                            <StatusBadge status={assignment.status} />
+                            {assignment.memberId === user.id &&
+                              selectedSchedule.date > today && (
+                                <span className="text-[11px] text-muted-foreground">
+                                  Dapat diubah saat hari penugasan
+                                </span>
+                              )}
+                          </div>
                         )}
                       </div>
                       {canChange && (

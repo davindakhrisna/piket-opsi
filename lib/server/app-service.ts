@@ -573,7 +573,7 @@ export async function updateStatus(
     throw new AppError(403, "Anda hanya dapat mengubah status tugas sendiri.");
   return transaction(async (client) => {
     const schedule = await client.query(
-      "SELECT version FROM schedules WHERE id = $1 FOR UPDATE",
+      "SELECT version, (date <= (now() AT TIME ZONE 'Asia/Jakarta')::date) AS arrived FROM schedules WHERE id = $1 FOR UPDATE",
       [id],
     );
     if (!schedule.rowCount) throw new AppError(404, "Jadwal sudah dihapus.");
@@ -581,6 +581,11 @@ export async function updateStatus(
       throw new AppError(
         409,
         "Jadwal berubah. Muat ulang sebelum mengubah status.",
+      );
+    if (auth.user.role !== "admin" && !schedule.rows[0].arrived)
+      throw new AppError(
+        403,
+        "Status tugas hanya dapat diubah pada hari jadwal atau setelahnya.",
       );
     const result = await client.query(
       "UPDATE assignments SET status = $1 WHERE schedule_id = $2 AND member_id = $3 RETURNING member_id",

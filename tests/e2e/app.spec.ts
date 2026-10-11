@@ -773,6 +773,18 @@ test("server permissions, CSRF, first-admin gate, session rotation and expiry", 
         version: 1,
       })
     ).status(),
+  ).toBe(403);
+  const todayValue = schedule(a, 0);
+  const createdToday = await send(request, "schedules", "POST", todayValue);
+  const todayScheduleId = (await createdToday.json()).id;
+  expect(
+    (
+      await send(memberClient, `schedules/${todayScheduleId}/status`, "PATCH", {
+        memberId: a,
+        status: "done",
+        version: 1,
+      })
+    ).status(),
   ).toBe(200);
   await db.query(
     "UPDATE sessions SET expires_at = now() - interval '1 second' WHERE user_id = $1",
